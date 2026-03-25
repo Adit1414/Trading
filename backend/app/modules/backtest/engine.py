@@ -255,6 +255,10 @@ async def _persist_result(
             # Serialise statistics to a plain dict for JSONB storage
             metrics_dict = statistics.model_dump()
 
+            # Serialise parameters to dict and include the user-defined name
+            params_dict = parameters.model_dump()
+            params_dict["name"] = request.name
+
             row = await create_backtest(
                 session=session,
                 id=backtest_id,
@@ -262,7 +266,7 @@ async def _persist_result(
                 strategy_id=strategy_row.id,
                 symbol=request.symbol,
                 timeframe=request.interval.value,
-                parameters=parameters.model_dump(),
+                parameters=params_dict,
                 metrics=metrics_dict,
                 result_file_url=None,              # Supabase Storage: future
             )

@@ -141,6 +141,7 @@ class BacktestListItemDB(BaseModel):
     """
     model_config = _orm
     id:              str
+    name:            Optional[str] = Field(default=None)
     strategy_id:     str
     symbol:          str
     timeframe:       str
@@ -154,8 +155,10 @@ class BacktestListItemDB(BaseModel):
     def from_orm_row(cls, row: Any) -> "BacktestListItemDB":
         """Build from a BacktestModel ORM instance, extracting metric scalars."""
         metrics = row.metrics or {}
+        params = row.parameters or {}
         return cls(
             id=row.id,
+            name=params.get("name"),
             strategy_id=row.strategy_id,
             symbol=row.symbol,
             timeframe=row.timeframe,
