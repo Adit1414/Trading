@@ -9,3 +9,9 @@ pydantic_settings==2.13.1
 pytest==9.0.2
 slowapi==0.1.9
 SQLAlchemy==2.0.23
+uvicorn
+python-dotenv
+alembic
+asyncpg
+psycopg2-binary
+#npm install
