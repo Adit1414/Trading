@@ -57,3 +57,27 @@ export function useRunBacktest() {
     },
   })
 }
+
+/**
+ * DELETE /backtests/{id}
+ * Returns: void
+ */
+export function useDeleteBacktest() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (id) => {
+      console.log(`[useDeleteBacktest] Deleting backtest: ${id}`)
+      const { data } = await api.delete(`/backtests/${id}`)
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['backtests'] })
+    },
+    onError: (err) => {
+      console.error('[useDeleteBacktest] Error:', err)
+      alert(err.response?.data?.detail || err.message || 'Failed to delete backtest')
+    }
+  })
+}
+

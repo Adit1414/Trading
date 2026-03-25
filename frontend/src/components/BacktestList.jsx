@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { useBacktests } from '../api/backtests'
+import { useBacktests, useDeleteBacktest } from '../api/backtests'
 import { useState } from 'react'
 import { CheckCircle2, Clock, AlertTriangle, Eye, Trash2, Activity, TrendingUp, TrendingDown } from 'lucide-react'
 
@@ -38,6 +38,13 @@ export default function BacktestList({ searchQuery }) {
   const offset = page * limit
 
   const { data: backtests, isLoading, isError, error } = useBacktests(limit, offset)
+  const deleteMutation = useDeleteBacktest()
+
+  const handleDelete = (id) => {
+    if (window.confirm('Are you sure you want to delete this backtest?')) {
+      deleteMutation.mutate(id)
+    }
+  }
 
   if (isLoading) return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', gap: '12px', background: 'linear-gradient(145deg,#131b2f,#0f1729)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px' }}>
@@ -208,12 +215,14 @@ export default function BacktestList({ searchQuery }) {
                   </button>
                   <button
                     title="Delete"
+                    onClick={() => handleDelete(bt.id)}
+                    disabled={deleteMutation.isPending}
                     style={{
                       width: '34px', height: '34px', borderRadius: '10px',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       border: '1px solid rgba(255,255,255,0.07)',
                       background: 'rgba(255,255,255,0.03)', color: '#64748b',
-                      cursor: 'pointer', transition: 'all 0.2s',
+                      cursor: deleteMutation.isPending ? 'wait' : 'pointer', transition: 'all 0.2s',
                     }}
                     onMouseEnter={(e) => { e.currentTarget.style.color = '#f43f5e'; e.currentTarget.style.background = 'rgba(244,63,94,0.08)'; e.currentTarget.style.borderColor = 'rgba(244,63,94,0.2)' }}
                     onMouseLeave={(e) => { e.currentTarget.style.color = '#64748b'; e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.07)' }}
