@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 
 const DEFAULT_STRATEGIES = [
   {
-    id: 'EMA_Crossover',
+    id: '11111111-1111-4111-8111-111111111111',
     name: 'EMA Crossover',
     description: 'A trend-following strategy that generates buy/sell signals on intersections of fast and slow EMAs.',
     tags: ['Trend', 'Medium Risk', 'Any Market'],
@@ -12,7 +12,7 @@ const DEFAULT_STRATEGIES = [
     stats: { winRate: '64%', profitFactor: '1.4' }
   },
   {
-    id: 'RSI_Divergence',
+    id: '22222222-2222-4222-8222-222222222222',
     name: 'RSI Divergence',
     description: 'Identifies potential market reversals by observing momentum decay against price action extremes.',
     tags: ['Reversal', 'High Reward', 'Ranging'],
@@ -21,7 +21,7 @@ const DEFAULT_STRATEGIES = [
     stats: { winRate: '58%', profitFactor: '2.1' }
   },
   {
-    id: 'Mean_Reversion',
+    id: '33333333-3333-4333-8333-333333333333',
     name: 'Bollinger Mean Reversion',
     description: 'Fades price extensions outside standard deviation bands expecting a return to the mean SMA.',
     tags: ['Counter-Trend', 'Low Risk', 'Ranging Market'],
@@ -30,7 +30,7 @@ const DEFAULT_STRATEGIES = [
     stats: { winRate: '71%', profitFactor: '1.2' }
   },
   {
-    id: 'Momentum_Breakout',
+    id: '44444444-4444-4444-8444-444444444444',
     name: 'Momentum Breakout',
     description: 'Capitalizes on extreme volume surges breaking out of defined consolidation ranges.',
     tags: ['Breakout', 'High Risk', 'Crypto'],

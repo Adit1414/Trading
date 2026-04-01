@@ -43,11 +43,11 @@ export function useCreateBot() {
  * Body: { targetState } (e.g. "PAUSED", "START", "STOP")
  * Returns: Bot info
  */
-export function useUpdateBotState(botId) {
+export function useUpdateBotState() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ targetState, idempotencyKey }) => {
+    mutationFn: async ({ botId, targetState, idempotencyKey }) => {
       console.log(`[useUpdateBotState ${botId}] Target state:`, targetState)
       const { data } = await api.put(
         `/bots/${botId}/state`,

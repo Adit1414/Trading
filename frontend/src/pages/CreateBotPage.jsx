@@ -6,9 +6,10 @@ import { ArrowLeft, Rocket, Settings2, ShieldAlert } from 'lucide-react'
 
 const ASSETS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'AVAX/USDT']
 const STRATEGIES = {
-  'SMA_Crossover': { name: 'SMA Crossover', params: { fast_ma: 10, slow_ma: 21 } },
-  'EMA_Crossover': { name: 'EMA Crossover', params: { fast_ema: 12, slow_ema: 26 } },
-  'RSI_Divergence': { name: 'RSI Divergence', params: { rsi_period: 14, overbought: 70, oversold: 30 } },
+  '11111111-1111-4111-8111-111111111111': { name: 'EMA Crossover', params: { fast_ema: 12, slow_ema: 26 } },
+  '22222222-2222-4222-8222-222222222222': { name: 'RSI Divergence', params: { rsi_period: 14, overbought: 70, oversold: 30 } },
+  '33333333-3333-4333-8333-333333333333': { name: 'Bollinger Mean Reversion', params: { length: 20, mult: 2.0 } },
+  '44444444-4444-4444-8444-444444444444': { name: 'Momentum Breakout', params: { lookback: 20, threshold: 1.5 } },
 }
 
 export default function CreateBotPage() {

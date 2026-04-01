@@ -48,7 +48,7 @@ def _build_client() -> Optional["aioredis.Redis"]:  # type: ignore[name-defined]
         encoding="utf-8",
         decode_responses=True,
     )
-    logger.info("Redis client initialised → %s", settings.REDIS_URL)
+    logger.info("Redis client initialised successfully (URL redacted)")
     return client
 
 

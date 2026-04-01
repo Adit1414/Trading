@@ -35,8 +35,9 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import UUID4, BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app.core.idempotency import IdempotencyContext, idempotency_dep
@@ -57,7 +58,7 @@ class BotCreate(BaseModel):
     symbol:      str            = Field(..., min_length=1, max_length=20,
                                         description="Trading pair, e.g. BTCUSDT")
     is_testnet:  bool           = Field(..., description="True → TESTNET, False → MAINNET")
-    strategy_id: str            = Field(..., description="UUID of the STRATEGIES row")
+    strategy_id: UUID4          = Field(..., description="UUID of the STRATEGIES row")
     parameters:  Dict[str, Any] = Field(default_factory=dict,
                                         description="Strategy-specific parameter values")
     take_profit: Optional[float] = Field(default=None, ge=0,
@@ -178,7 +179,7 @@ async def create_bot(
             id=bot_id,
             symbol=body.symbol.upper(),
             user_id=None,                          # pre-auth phase
-            strategy_id=body.strategy_id,
+            strategy_id=str(body.strategy_id),
             name=body.name,
             environment=environment,
             status="RUNNING",
@@ -188,7 +189,13 @@ async def create_bot(
             trade_quantity=None,
         )
         session.add(bot)
-        await session.flush()   # populate bot.id before creating state
+        try:
+            await session.flush()   # populate bot.id before creating state
+        except IntegrityError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid strategy_id '{body.strategy_id}': Strategy not found.",
+            )
 
         state = BotStateModel(
             bot_id=bot_id,
@@ -225,6 +232,7 @@ async def create_bot(
 async def update_bot_state(
     bot_id: str,
     body: BotStateUpdate,
+    request: Request,
     background_tasks: BackgroundTasks,
     ctx: IdempotencyContext = Depends(idempotency_dep),
 ) -> BotResponse:
@@ -307,6 +315,8 @@ async def update_bot_state(
 
 HEARTBEAT_INTERVAL = 15  # seconds
 
+import time
+
 @router.get("/events", summary="Live bot telemetry stream (SSE)")
 async def bot_events(request: Request):
     """
@@ -325,7 +335,6 @@ async def bot_events(request: Request):
       Subscribes to channel:user_{user_id}:events when auth is active,
       or channel:global:events in the pre-auth phase.
     """
-    # Module 1 stub: replace with request.state.user_id once JWT is active
     user_id: Optional[str] = getattr(request.state, "user_id", None)
     channel = channel_name(user_id)
     redis = get_redis()
@@ -338,36 +347,31 @@ async def bot_events(request: Request):
                 await pubsub.subscribe(channel)
                 logger.info("[SSE] Client subscribed to %s", channel)
 
+                last_heartbeat = time.time()
+
                 while True:
                     if await request.is_disconnected():
                         logger.info("[SSE] Client disconnected from %s", channel)
                         break
 
-                    try:
-                        # Wait up to HEARTBEAT_INTERVAL for the next message.
-                        # Timeout → yield heartbeat; message arrives → yield it.
-                        message = await asyncio.wait_for(
-                            pubsub.get_message(ignore_subscribe_messages=True, timeout=0.05),
-                            timeout=HEARTBEAT_INTERVAL,
-                        )
-                    except asyncio.TimeoutError:
-                        # No message arrived within the heartbeat window
-                        yield HEARTBEAT
-                        continue
-                    except asyncio.CancelledError:
-                        break
+                    # Check for new messages from the engine
+                    message = await pubsub.get_message(ignore_subscribe_messages=True)
+                    
+                    if message is not None:
+                        # Forward the raw Redis payload as an SSE frame
+                        raw = message.get("data", "")
+                        if isinstance(raw, bytes):
+                            raw = raw.decode()
+                        if raw:
+                            yield f"data: {raw}\n\n"
+                    else:
+                        # No message? Wait half a second before checking again so we don't spam the CPU
+                        await asyncio.sleep(0.5)
 
-                    if message is None:
-                        # get_message returned None (nothing queued yet)
+                    # If 15 seconds have passed since the last heartbeat, send a ping
+                    if time.time() - last_heartbeat >= HEARTBEAT_INTERVAL:
                         yield HEARTBEAT
-                        continue
-
-                    # Forward the raw Redis payload as an SSE frame
-                    raw = message.get("data", "")
-                    if isinstance(raw, bytes):
-                        raw = raw.decode()
-                    if raw:
-                        yield f"data: {raw}\n\n"
+                        last_heartbeat = time.time()
 
             except asyncio.CancelledError:
                 pass
@@ -392,7 +396,6 @@ async def bot_events(request: Request):
         event_generator(),
         media_type="text/event-stream",
         headers={
-            # Prevent proxies from buffering the stream
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
         },
