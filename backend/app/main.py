@@ -24,7 +24,9 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from app.api.v1 import api_router
 from app.core.config import settings
+from app.core.idempotency import _CachedResponse
 from app.core.rate_limiter import limiter
+from app.core.redis import close_redis
 
 logging.basicConfig(
     level=logging.DEBUG if settings.DEBUG else logging.INFO,
@@ -51,6 +53,13 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_middleware(SlowAPIMiddleware)
+
+    # ── Idempotency cache-hit handler ──────────────────────────────────
+    # When a duplicate request arrives, the dependency raises _CachedResponse
+    # containing a pre-built JSONResponse.  This handler returns it directly.
+    @app.exception_handler(_CachedResponse)
+    async def _handle_cached(request: Request, exc: _CachedResponse):
+        return exc.response
 
     # ── CORS ──────────────────────────────────────────────────────────────────
     app.add_middleware(
@@ -96,6 +105,7 @@ def create_app() -> FastAPI:
     @app.on_event("shutdown")
     async def _on_shutdown() -> None:
         logger.info("%s shutting down.", settings.APP_NAME)
+        await close_redis()
 
     # ── Global health endpoint ────────────────────────────────────────────────
     @app.get("/health", tags=["Health"], include_in_schema=True)

@@ -222,10 +222,10 @@ class BotModel(Base):
     id: Mapped[str] = mapped_column(
         UUID(as_uuid=False), primary_key=True, default=_uuid
     )
-    user_id: Mapped[str] = mapped_column(
+    user_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False),
         ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,   # nullable until Module 1 auth is wired
         index=True,
     )
     strategy_id: Mapped[str] = mapped_column(
@@ -233,6 +233,11 @@ class BotModel(Base):
         ForeignKey("strategies.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
+    )
+    symbol: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        comment="Trading pair, e.g. BTCUSDT",
     )
     name: Mapped[str] = mapped_column(
         String(120),
