@@ -68,16 +68,19 @@ async def get_one_backtest(backtest_id: str) -> BacktestDB:
             )
             
         db_obj = BacktestDB.model_validate(row)
-        
-        # Attempt to load chart_html from disk
-        try:
-            chart_path = get_chart_path(backtest_id)
-            if chart_path:
-                with open(chart_path, "r", encoding="utf-8") as f:
-                    db_obj.chart_html = f.read()
-        except Exception as e:
-            logger.warning("Failed to load chart HTML for backtest %s: %s", backtest_id, e)
-            
+
+        # Prefer chart_html stored in the DB; fall back to disk for older rows
+        if row.chart_html:
+            db_obj.chart_html = row.chart_html
+        else:
+            try:
+                chart_path = get_chart_path(backtest_id)
+                if chart_path:
+                    with open(chart_path, "r", encoding="utf-8") as f:
+                        db_obj.chart_html = f.read()
+            except Exception as e:
+                logger.warning("Failed to load chart HTML for backtest %s: %s", backtest_id, e)
+
         return db_obj
 
 

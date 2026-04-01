@@ -134,8 +134,9 @@ async def run_backtest(request: BacktestRunRequest) -> BacktestRunResponse:
     statistics, trade_records = synthesize(equity_curve, raw_trades, request.initial_cash)
 
     # ── 6b. Generate interactive Plotly chart ─────────────────────────────────
+    chart_html: Optional[str] = None
     try:
-        chart_path = await loop.run_in_executor(
+        chart_html, chart_path = await loop.run_in_executor(
             _thread_pool,
             _generate_chart,
             df_signals,
@@ -191,7 +192,7 @@ async def run_backtest(request: BacktestRunRequest) -> BacktestRunResponse:
         backtest_id, statistics.total_trades, statistics.total_return_pct,
     )
 
-    await _persist_result_stub(backtest_id, request, response)
+    await _persist_result_stub(backtest_id, request, response, chart_html)
     return response
 
 
@@ -215,12 +216,14 @@ def _generate_chart(
     initial_cash: float,
     strategy_name: str,
     backtest_id: str,
-) -> str:
-    """Build the interactive Plotly chart and save as HTML. Returns file path."""
+) -> tuple[str, str]:
+    """Build the interactive Plotly chart, save as HTML, and return (html_str, file_path)."""
     chart_df = prepare_chart_dataframe(df_signals, initial_cash)
     stats = _compute_chart_stats(chart_df, initial_cash)
     fig = build_backtest_chart(chart_df, stats, strategy_name)
-    return save_chart_html(fig, backtest_id)
+    chart_path = save_chart_html(fig, backtest_id)
+    html_str = fig.to_html(include_plotlyjs=True, full_html=True)
+    return html_str, chart_path
 
 
 
@@ -240,7 +243,12 @@ def _bars_to_dataframe(bars: list[OHLCV]) -> pd.DataFrame:
 
 # ─── DB persistence stub ─────────────────────────────────────────────────────
 
-async def _persist_result_stub(backtest_id: str, request: BacktestRunRequest, response: BacktestRunResponse) -> None:
+async def _persist_result_stub(
+    backtest_id: str,
+    request: BacktestRunRequest,
+    response: BacktestRunResponse,
+    chart_html: Optional[str] = None,
+) -> None:
     """
     Persist backtest result to DB.
     """
@@ -265,6 +273,7 @@ async def _persist_result_stub(backtest_id: str, request: BacktestRunRequest, re
                 parameters=response.parameters.model_dump(mode="json"),
                 metrics=response.statistics.model_dump(mode="json"),
                 result_file_url=None,
+                chart_html=chart_html,
             )
             await session.commit()
             logger.debug("DB persist complete — backtest_id=%s", backtest_id)
