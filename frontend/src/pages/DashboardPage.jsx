@@ -56,7 +56,7 @@ export default function DashboardPage() {
             New Backtest
           </button>
           <button
-            onClick={() => navigate('/bots')}
+            onClick={() => navigate('/bots/create')}
             style={{
               display: 'flex', alignItems: 'center', gap: '7px',
               padding: '9px 18px', borderRadius: '12px',

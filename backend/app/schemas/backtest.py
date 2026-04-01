@@ -3,8 +3,12 @@ app/schemas/backtest.py
 ────────────────────────
 All Pydantic request / response models for the Backtesting Engine.
 
-Parameter ranges sourced from trading_strategy_parameters.xlsx.
-Statistics output.
+Cryptocurrency / Binance specific (SRS §1.2):
+  • TradingMarket is BINANCE only — no stock market support.
+  • Commission default = 0.001 (0.1 %), standard Binance Spot fee.
+  • `slippage` replaces `spread` — correct Binance terminology.
+  • EMA / all strategies accept `source` (CLOSE | OPEN | HL2).
+  • `order_size_mode` supports PCT_EQUITY or FIXED_USDT sizing.
 """
 
 from __future__ import annotations
@@ -37,14 +41,17 @@ class TradingMarket(str, Enum):
 
 
 class CandleSource(str, Enum):
-    """Price input for indicator calculations (per xlsx: CLOSE, OPEN, HL2)."""
-    CLOSE = "CLOSE"
-    OPEN  = "OPEN"
-    HL2   = "HL2"     # (high + low) / 2
+    """
+    Which candlestick value to use as price input for indicator calculations.
+    Matches the Binance / TradingView `source` convention.
+    """
+    CLOSE = "CLOSE"   # closing price (most common, lowest noise)
+    OPEN  = "OPEN"    # opening price
+    HL2   = "HL2"     # (high + low) / 2  — median price
 
 
 class Interval(str, Enum):
-    """Binance K-line intervals — matches GET /api/v3/klines `interval` enum."""
+    """Binance K-line intervals accepted by GET /api/v3/klines."""
     M1  = "1m"
     M3  = "3m"
     M5  = "5m"
@@ -71,181 +78,112 @@ class BacktestStatus(str, Enum):
 
 class OrderSizeMode(str, Enum):
     """
-    FIXED_USDT – spend a fixed USDT amount per trade.
-    PCT_EQUITY – spend a % of current portfolio equity per trade.
+    How to size each order.
+      FIXED_USDT – spend a fixed USDT amount per trade (order_size_usdt).
+      PCT_EQUITY – spend a % of current portfolio equity per trade (order_size_pct).
     """
     FIXED_USDT = "FIXED_USDT"
     PCT_EQUITY = "PCT_EQUITY"
 
 
-# ─── Strategy-specific parameter schemas ─────────────────────────────────────
-# Ranges taken verbatim from trading_strategy_parameters.xlsx
+# ─── Strategy Parameter Schemas ───────────────────────────────────────────────
 
-class EMACrossoverConfig(BaseModel):
+class EMACrossoverParams(BaseModel):
     """
-    EMA CrossOver parameters (xlsx: EMA Crossover parameters).
-    fast_period : 3–50,   default 12
-    slow_period : 15–200, default 26
-    source      : CLOSE | OPEN | HL2
+    EMA CrossOver parameters (per Image 3).
+    fast_period: short-term EMA (e.g. 9, 12, 20)
+    slow_period: long-term EMA  (e.g. 26, 50, 200)
+    source:      candle price input: CLOSE / OPEN / HL2
     """
-    fast_period: int         = Field(default=12, ge=3,   le=50,
-                                     description="Short-term EMA period (range 3–50)")
-    slow_period: int         = Field(default=26, ge=15,  le=200,
-                                     description="Long-term EMA period (range 15–200)")
-    source:      CandleSource = Field(default=CandleSource.CLOSE,
-                                      description="Price source: CLOSE | OPEN | HL2")
+    fast_period: int         = Field(default=12,  ge=2, le=200)
+    slow_period: int         = Field(default=26,  ge=2, le=500)
+    source:      CandleSource = Field(default=CandleSource.CLOSE)
 
     @model_validator(mode="after")
-    def _check(self) -> "EMACrossoverConfig":
+    def _check(self) -> "EMACrossoverParams":
         if self.fast_period >= self.slow_period:
             raise ValueError("fast_period must be less than slow_period")
         return self
 
 
-class RSIDivergenceConfig(BaseModel):
-    """
-    RSI Divergence parameters (xlsx: RSI Divergence).
-    period          : 2–50,  default 14
-    oversold        : 10–40, default 30
-    overbought      : 60–90, default 70
-    lookback_periods: 3–10,  default 5  — bars to scan for divergence
-    source          : CLOSE | OPEN | HL2
-    """
-    period:           int          = Field(default=14, ge=2,  le=50,
-                                           description="RSI calculation period (range 2–50)")
-    oversold:         int          = Field(default=30, ge=10, le=40,
-                                           description="Oversold threshold (range 10–40)")
-    overbought:       int          = Field(default=70, ge=60, le=90,
-                                           description="Overbought threshold (range 60–90)")
-    lookback_periods: int          = Field(default=5,  ge=3,  le=10,
-                                           description="Bars to look back for divergence (range 3–10)")
-    source:           CandleSource = Field(default=CandleSource.CLOSE,
-                                           description="Price source: CLOSE | OPEN | HL2")
+class RSIDivergenceParams(BaseModel):
+    period:     int          = Field(default=14,   ge=2,    le=100)
+    overbought: float        = Field(default=70.0, ge=50.0, le=100.0)
+    oversold:   float        = Field(default=30.0, ge=0.0,  le=50.0)
+    source:     CandleSource = Field(default=CandleSource.CLOSE)
 
     @model_validator(mode="after")
-    def _check(self) -> "RSIDivergenceConfig":
+    def _check(self) -> "RSIDivergenceParams":
         if self.oversold >= self.overbought:
             raise ValueError("oversold must be less than overbought")
         return self
 
 
-class BollingerBandsConfig(BaseModel):
-    """
-    Bollinger Bands parameters (xlsx: Bollinger Bands).
-    period  : 10–50,    default 20
-    std_dev : 0.5–3.0,  default 2.0
-    source  : CLOSE | OPEN | HL2
-    """
-    period:  int          = Field(default=20,  ge=10,  le=50,
-                                  description="SMA/std period (range 10–50)")
-    std_dev: float        = Field(default=2.0, ge=0.5, le=3.0,
-                                  description="Std deviation multiplier (range 0.5–3.0)")
-    source:  CandleSource = Field(default=CandleSource.CLOSE,
-                                  description="Price source: CLOSE | OPEN | HL2")
+class BollingerBandsParams(BaseModel):
+    period:  int          = Field(default=20,  ge=2,   le=200)
+    std_dev: float        = Field(default=2.0, ge=0.5, le=5.0)
+    source:  CandleSource = Field(default=CandleSource.CLOSE)
 
 
-class MACDSignalConfig(BaseModel):
-    """
-    MACD Signal parameters (xlsx: MACD Signal).
-    fast_period   : 6–30,  default 12
-    slow_period   : 15–50, default 26
-    signal_period : 5–15,  default 9
-    source        : CLOSE | OPEN | HL2
-    """
-    fast_period:   int          = Field(default=12, ge=6,  le=30,
-                                        description="Fast EMA period (range 6–30)")
-    slow_period:   int          = Field(default=26, ge=15, le=50,
-                                        description="Slow EMA period (range 15–50)")
-    signal_period: int          = Field(default=9,  ge=5,  le=15,
-                                        description="Signal line EMA period (range 5–15)")
-    source:        CandleSource = Field(default=CandleSource.CLOSE,
-                                        description="Price source: CLOSE | OPEN | HL2")
+class MACDSignalParams(BaseModel):
+    fast_period:   int          = Field(default=12, ge=2, le=100)
+    slow_period:   int          = Field(default=26, ge=2, le=300)
+    signal_period: int          = Field(default=9,  ge=2, le=100)
+    source:        CandleSource = Field(default=CandleSource.CLOSE)
 
     @model_validator(mode="after")
-    def _check(self) -> "MACDSignalConfig":
+    def _check(self) -> "MACDSignalParams":
         if self.fast_period >= self.slow_period:
             raise ValueError("fast_period must be less than slow_period")
         return self
 
 
-# ─── Strategy config registry (used by the frontend to build forms) ───────────
-
-STRATEGY_CONFIG_SCHEMAS: Dict[str, type] = {
-    "EMA_CROSSOVER":   EMACrossoverConfig,
-    "RSI_DIVERGENCE":  RSIDivergenceConfig,
-    "BOLLINGER_BANDS": BollingerBandsConfig,
-    "MACD_SIGNAL":     MACDSignalConfig,
-}
-
-
-# ─── Main Request ─────────────────────────────────────────────────────────────
+# ─── Request ─────────────────────────────────────────────────────────────────
 
 class BacktestRunRequest(BaseModel):
     """
-    Full backtest run request.
+    Full backtest run request — matches 'Start New Backtest' UI modal.
 
-    Common parameters (xlsx: Backtest Common Parameters):
+    Simulation parameters (Image 3):
       initial_cash     – Starting USDT balance.
       commission       – Fee per trade leg (0.001 = 0.1 %, Binance Spot default).
       slippage         – Execution slippage fraction (0.0005 = 0.05 %).
-      order_size_mode  – PCT_EQUITY or FIXED_USDT.
-      order_size_pct   – % of equity per trade (PCT_EQUITY mode).
-      order_size_usdt  – Fixed USDT per trade (FIXED_USDT mode).
-      intraday         – Force-close positions at end of each day.
-
-    Strategy-specific parameters go in `strategy_config` as a free-form dict
-    and are validated by the strategy class at engine run time.
+      order_size_mode  – PCT_EQUITY (% of equity) or FIXED_USDT.
+      order_size_pct   – % of equity per trade when mode = PCT_EQUITY.
+      order_size_usdt  – Fixed USDT per trade when mode = FIXED_USDT.
+      intraday         – Force-close all positions at end of each calendar day.
     """
 
     # Strategy
-    strategy:        StrategyName   = Field(...)
-    strategy_config: Dict[str, Any] = Field(
-        default_factory=dict,
-        description=(
-            "Strategy-specific parameters. See EMACrossoverConfig / "
-            "RSIDivergenceConfig / BollingerBandsConfig / MACDSignalConfig "
-            "for the accepted fields, types, and allowed ranges."
-        ),
-    )
+    strategy:        StrategyName    = Field(...)
+    strategy_config: Dict[str, Any]  = Field(default_factory=dict)
 
     # Metadata
     name: str = Field(..., min_length=1, max_length=120)
 
-    # Market — Binance only (SRS §1.2)
+    # Market — Binance only
     symbol:         str           = Field(..., min_length=1, max_length=20,
-                                          description="Binance trading pair, e.g. BTCUSDT")
+                                          description="Binance pair, e.g. BTCUSDT")
     contract_type:  ContractType  = ContractType.SPOT
     trading_market: TradingMarket = TradingMarket.BINANCE
     interval:       Interval      = Interval.D1
 
-    # Common simulation parameters (xlsx: Backtest Common Parameters)
-    initial_cash: float = Field(
-        default=10_000.0, ge=1.0,
-        description="Starting simulated USDT balance",
-    )
-    commission: float = Field(
-        default=0.001, ge=0.0, le=0.1,
-        description="Trading fee per leg. Binance Spot = 0.001 (0.1%)",
-    )
-    slippage: float = Field(
-        default=0.0005, ge=0.0, le=0.05,
-        description="Execution slippage fraction. e.g. 0.0005 = 0.05%",
-    )
+    # Simulation
+    initial_cash: float = Field(default=10_000.0, ge=1.0,
+                                description="Starting balance in USDT")
+    commission:   float = Field(default=0.001, ge=0.0, le=0.1,
+                                description="Fee per trade leg, e.g. 0.001 = 0.1 %")
+    slippage:     float = Field(default=0.0005, ge=0.0, le=0.05,
+                                description="Execution slippage fraction, e.g. 0.0005 = 0.05 %")
+    intraday:     bool  = Field(default=False,
+                                description="Close all positions at end of each trading day")
 
     # Order sizing
-    order_size_mode: OrderSizeMode   = Field(default=OrderSizeMode.PCT_EQUITY)
-    order_size_pct:  float           = Field(
-        default=100.0, ge=1.0, le=100.0,
-        description="% of current equity to use per trade (PCT_EQUITY mode)",
-    )
-    order_size_usdt: Optional[float] = Field(
-        default=None, ge=1.0,
-        description="Fixed USDT per trade (FIXED_USDT mode)",
-    )
-    intraday: bool = Field(
-        default=False,
-        description="Close all positions at end of each calendar day",
-    )
+    order_size_mode: OrderSizeMode  = Field(default=OrderSizeMode.PCT_EQUITY)
+    order_size_pct:  float          = Field(default=100.0, ge=1.0, le=100.0,
+                                            description="% of current equity per trade (PCT_EQUITY mode)")
+    order_size_usdt: Optional[float]= Field(default=None,  ge=1.0,
+                                            description="Fixed USDT per trade (FIXED_USDT mode)")
 
     # Date range
     start_date: date = Field(..., description="Backtest start date (UTC)")
@@ -259,7 +197,7 @@ class BacktestRunRequest(BaseModel):
         if self.start_date >= self.end_date:
             raise ValueError("start_date must be before end_date")
         if self.order_size_mode == OrderSizeMode.FIXED_USDT and not self.order_size_usdt:
-            raise ValueError("order_size_usdt required when order_size_mode = FIXED_USDT")
+            raise ValueError("order_size_usdt is required when order_size_mode = FIXED_USDT")
         return self
 
     @field_validator("symbol")
@@ -286,7 +224,7 @@ class BacktestRunRequest(BaseModel):
     }}}
 
 
-# ─── Response: equity point + trade record ────────────────────────────────────
+# ─── Response models ──────────────────────────────────────────────────────────
 
 class EquityPoint(BaseModel):
     timestamp: str
@@ -295,96 +233,38 @@ class EquityPoint(BaseModel):
 
 class TradeRecord(BaseModel):
     trade_number:  int
-    direction:     str              # LONG (SHORT reserved for future)
+    direction:     str              # LONG (SHORT when strategies support it)
     entry_date:    str
     entry_price:   float
     exit_date:     Optional[str]
     exit_price:    Optional[float]
-    quantity_usdt: float            # USDT value of position at entry
+    quantity_usdt: float            # USDT value of the position at entry
     pnl:           Optional[float]
     return_pct:    Optional[float]
-    status:        str              # OPEN | CLOSED
+    status:        str              # OPEN / CLOSED
 
-
-# ─── Response: full statistics ────────────
 
 class BacktestStatistics(BaseModel):
-    """
-    Complete performance statistics.
-    All monetary values in USDT. All ratios are dimensionless unless noted.
-    """
+    """Statistics tab — Performance Synthesizer output (HLD §4.2)."""
+    total_return:            float
+    total_return_pct:        float
+    final_portfolio_value:   float
+    win_rate:                float           # 0–100 %
+    max_drawdown:            float           # absolute USDT
+    max_drawdown_pct:        float           # percentage
+    total_trades:            int
+    winning_trades:          int
+    losing_trades:           int
+    open_trades:             int
+    avg_win:                 float
+    avg_loss:                float
+    profit_factor:           Optional[float]
+    avg_trade_duration_bars: Optional[float]
 
-    # ── Portfolio summary ─────────────────────────────────────────────────────
-    equity_final:   float  = Field(description="Final portfolio value in USDT")
-    equity_peak:    float  = Field(description="Maximum portfolio value reached in USDT")
-    total_return:   float  = Field(description="Net profit/loss in USDT")
-    total_return_pct: float= Field(description="Return as % of initial capital")
-
-    # ── Time-based metrics ────────────────────────────────────────────────────
-    exposure_time_pct: float = Field(
-        description="% of total bars where capital was deployed in a position"
-    )
-    return_ann_pct:  float = Field(description="Annualised return %")
-    volatility_ann_pct: float = Field(
-        description="Annualised volatility of daily returns %"
-    )
-    cagr_pct:        float = Field(description="Compound Annual Growth Rate %")
-
-    # ── Benchmark comparison ──────────────────────────────────────────────────
-    buy_hold_return_pct: float = Field(
-        description="Return % of a simple buy-and-hold strategy over the same period"
-    )
-    alpha_pct:  float = Field(
-        description="Excess return over buy-and-hold benchmark %"
-    )
-    beta:       float = Field(
-        description="Portfolio return sensitivity to the benchmark (buy-and-hold)"
-    )
-
-    # ── Risk-adjusted ratios ──────────────────────────────────────────────────
-    sharpe_ratio:  float = Field(
-        description="(Ann. return − risk-free rate) / Ann. volatility. Risk-free = 0"
-    )
-    sortino_ratio: float = Field(
-        description="Ann. return / downside deviation (penalises only negative volatility)"
-    )
-    calmar_ratio:  float = Field(
-        description="Ann. return / max drawdown % (higher = better risk/reward)"
-    )
-
-    # ── Drawdown ──────────────────────────────────────────────────────────────
-    max_drawdown_pct:  float = Field(description="Maximum peak-to-trough decline %")
-    avg_drawdown_pct:  float = Field(description="Average drawdown across all drawdown periods %")
-    max_drawdown_duration: str = Field(
-        description="Longest time from peak to recovery (e.g. '7 days 01:46:00')"
-    )
-    avg_drawdown_duration: str = Field(
-        description="Average drawdown duration (e.g. '2 days 08:43:00')"
-    )
-
-    # ── Trade statistics ──────────────────────────────────────────────────────
-    total_trades:   int
-    winning_trades: int
-    losing_trades:  int
-    open_trades:    int
-    win_rate:       float  = Field(description="% of closed trades that were profitable")
-    avg_win:        float  = Field(description="Average profit per winning trade in USDT")
-    avg_loss:       float  = Field(description="Average loss per losing trade in USDT")
-    profit_factor:  Optional[float] = Field(
-        description="Gross wins / gross losses. None when no losing trades"
-    )
-    avg_trade_duration_bars: Optional[float] = Field(
-        description="Average trade duration in bars"
-    )
-    commissions_paid: float = Field(
-        description="Total commissions paid across all trades in USDT"
-    )
-
-
-# ─── Response: parameters mirror ─────────────────────────────────────────────
 
 class BacktestParameters(BaseModel):
     """Parameters tab — mirrors the request for audit / reference."""
+    name:            Optional[str] = Field(default=None)
     strategy:        str
     strategy_config: Dict[str, Any]
     symbol:          str
@@ -403,39 +283,25 @@ class BacktestParameters(BaseModel):
     duration_days:   int
 
 
-# ─── Full response ────────────────────────────────────────────────────────────
-
 class BacktestRunResponse(BaseModel):
-    """Complete backtest report."""
-    backtest_id: str
-    name:        str
-    status:      BacktestStatus
-    created_at:  datetime
+    """Full backtest report returned on completion."""
+    backtest_id:      str
+    name:             str
+    status:           BacktestStatus
+    created_at:       datetime
 
-    # Overview tab
     equity_curve:     List[EquityPoint]
+
     start_date:       str
     end_date:         str
     duration_days:    int
     total_return:     float
     total_return_pct: float
 
-    # Statistics tab (all Image 2 metrics)
-    statistics: BacktestStatistics
+    statistics:  BacktestStatistics
+    parameters:  BacktestParameters
+    trade_log:   List[TradeRecord]
 
-    # Parameters tab
-    parameters: BacktestParameters
-
-    # Trade log
-    trade_log: List[TradeRecord]
-
-    # Interactive Plotly chart as self-contained HTML string
-    chart_html: str = Field(
-        description="Self-contained Plotly HTML with candlestick, indicator lines, "
-                    "trade markers, equity curve, and volume. Embed directly in the frontend."
-    )
-
-    # Non-null only on ERROR
     error_message: Optional[str] = None
 
 
@@ -448,14 +314,3 @@ class BacktestListItem(BaseModel):
     symbol:           str
     total_return_pct: Optional[float]
     created_at:       datetime
-
-
-# ─── Strategy metadata endpoint schema ───────────────────────────────────────
-
-class StrategyInfo(BaseModel):
-    """Returned by GET /backtest/strategies — used by frontend to build config forms."""
-    id:               str
-    display_name:     str
-    description:      str
-    min_bars_required: int
-    config_schema:    Dict[str, Any]   # JSON Schema of the config model

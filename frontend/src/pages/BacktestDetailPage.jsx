@@ -120,24 +120,47 @@ export default function BacktestDetailPage() {
           </div>
         </div>
 
-        {/* Export button */}
-        <button
-          onClick={handleExport}
-          disabled={!data.chart_html && !metrics.chart_html}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '7px',
-            padding: '9px 16px', borderRadius: '12px',
-            background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
-            color: '#94a3b8', fontSize: '13px', fontWeight: 500, cursor: 'pointer',
-            transition: 'all 0.2s', whiteSpace: 'nowrap',
-            opacity: (!data.chart_html && !metrics.chart_html) ? 0.4 : 1,
-          }}
-          onMouseEnter={(e) => { if (data.chart_html || metrics.chart_html) { e.currentTarget.style.color = 'white'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)' } }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = '#94a3b8'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)' }}
-        >
-          <Download size={15} strokeWidth={2} />
-          Export Report
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {/* Deploy to Live Button */}
+          {isCompleted && (
+            <button
+              onClick={() => navigate('/bots/create', { state: { strategy: data.strategy_id, symbol: data.symbol, parameters: parameters } })}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '7px',
+                padding: '9px 18px', borderRadius: '12px',
+                background: 'linear-gradient(135deg, #818cf8 0%, #6366f1 100%)',
+                border: 'none',
+                color: 'white', fontSize: '13px', fontWeight: 600,
+                cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap',
+                boxShadow: '0 4px 18px rgba(99,102,241,0.4)',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.88' }}
+              onMouseLeave={(e) => { e.currentTarget.style.opacity = '1' }}
+            >
+              <Activity size={15} strokeWidth={2.5} />
+              Deploy to Live
+            </button>
+          )}
+
+          {/* Export button */}
+          <button
+            onClick={handleExport}
+            disabled={!data.chart_html && !metrics.chart_html}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '7px',
+              padding: '9px 16px', borderRadius: '12px',
+              background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+              color: '#94a3b8', fontSize: '13px', fontWeight: 500, cursor: 'pointer',
+              transition: 'all 0.2s', whiteSpace: 'nowrap',
+              opacity: (!data.chart_html && !metrics.chart_html) ? 0.4 : 1,
+            }}
+            onMouseEnter={(e) => { if (data.chart_html || metrics.chart_html) { e.currentTarget.style.color = 'white'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)' } }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = '#94a3b8'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)' }}
+          >
+            <Download size={15} strokeWidth={2} />
+            Export Report
+          </button>
+        </div>
       </div>
 
       {/* ── Tabs ── */}

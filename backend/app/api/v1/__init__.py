@@ -1,9 +1,3 @@
-from fastapi import APIRouter
-from app.api.v1.routes import backtest
-from app.api.v1.routes import backtest_db
-from app.api.v1.routes import strategies_db
+from app.api.v1.routes import api_router
 
-api_router = APIRouter()
-api_router.include_router(backtest.router)
-api_router.include_router(backtest_db.router)
-api_router.include_router(strategies_db.router)
+__all__ = ["api_router"]

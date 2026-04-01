@@ -1,13 +1,15 @@
 """
 app/modules/backtest/strategies/__init__.py
 ────────────────────────────────────────────
-Strategy Registry — Binance Cryptocurrency
+Strategy Registry
 
 To add a new strategy:
-  1. Subclass BaseStrategy in a new file.
-  2. Import and add to STRATEGY_REGISTRY.
+  1. Implement BaseStrategy in a new file inside this package.
+  2. Import it here and add it to STRATEGY_REGISTRY.
   3. Add its name to app/schemas/backtest.py::StrategyName.
-  4. Add its config schema to STRATEGY_CONFIG_SCHEMAS.
+
+Module 4 (Bot Execution) imports `get_strategy` from this registry
+to instantiate the configured strategy for live trading.
 """
 
 from __future__ import annotations
@@ -29,43 +31,38 @@ STRATEGY_REGISTRY: Dict[str, Type[BaseStrategy]] = {
 
 
 def get_strategy(strategy_id: str, config: Dict[str, Any]) -> BaseStrategy:
+    """
+    Instantiate and return a configured strategy by its ID.
+
+    Args:
+        strategy_id: One of the keys in STRATEGY_REGISTRY.
+        config:      Strategy-specific parameter dict.
+
+    Raises:
+        KeyError:              Unknown strategy_id.
+        StrategyConfigError:   Invalid config parameters.
+    """
     cls = STRATEGY_REGISTRY.get(strategy_id.upper())
     if cls is None:
         raise KeyError(
-            f"Unknown strategy '{strategy_id}'. Available: {list(STRATEGY_REGISTRY)}"
+            f"Unknown strategy '{strategy_id}'. "
+            f"Available: {list(STRATEGY_REGISTRY)}"
         )
     return cls(config)
 
 
 def list_strategies() -> list[dict]:
-    """
-    Return rich metadata for each strategy — used by the frontend to:
-      • Populate the strategy selector dropdown.
-      • Dynamically build the parameter configuration form
-        (field names, types, defaults, min/max, descriptions).
-    """
-    from app.schemas.backtest import STRATEGY_CONFIG_SCHEMAS
-    results = []
-    for sid, cls in STRATEGY_REGISTRY.items():
-        # Instantiate with defaults to get min_bars_required
-        try:
-            instance = cls({})
-            min_bars = instance.min_bars_required
-        except Exception:
-            min_bars = 0
-
-        # Export the config schema as JSON Schema for frontend form generation
-        config_cls = STRATEGY_CONFIG_SCHEMAS.get(sid)
-        schema = config_cls.model_json_schema() if config_cls else {}
-
-        results.append({
-            "id":               sid,
-            "display_name":     cls.display_name,
-            "description":      getattr(cls, "description", ""),
-            "min_bars_required": min_bars,
-            "config_schema":    schema,
-        })
-    return results
+    """Return metadata for all registered strategies (for a /strategies endpoint)."""
+    return [
+        {
+            "id": key,
+            "display_name": cls.display_name,
+            "min_bars_required": cls({}).min_bars_required
+            if hasattr(cls({}), "min_bars_required")
+            else None,
+        }
+        for key, cls in STRATEGY_REGISTRY.items()
+    ]
 
 
 __all__ = [

@@ -20,8 +20,10 @@ import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.responses import FileResponse
 
 from app.core.rate_limiter import BACKTEST_LIMIT, limiter
+from app.modules.backtest.chart import get_chart_path
 from app.modules.backtest.data_cache import cache_stats
 from app.modules.backtest.engine import BacktestError, run_backtest
 from app.modules.backtest.strategies import list_strategies
@@ -76,6 +78,22 @@ async def run_backtest_endpoint(
         ) from exc
 
     return result
+
+
+@router.get(
+    "/chart/{backtest_id}",
+    summary="Get the interactive chart for a backtest",
+    description="Returns the self-contained Plotly HTML chart for the given backtest ID.",
+)
+async def get_chart(backtest_id: str):
+    """Serve the generated Plotly chart HTML file."""
+    path = get_chart_path(backtest_id)
+    if path is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Chart not found for backtest_id={backtest_id}",
+        )
+    return FileResponse(path, media_type="text/html", filename=f"{backtest_id}.html")
 
 
 @router.get(

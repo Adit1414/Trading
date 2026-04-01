@@ -3,10 +3,11 @@ app/modules/backtest/strategies/bollinger_bands.py
 ────────────────────────────────────────────────────
 Bollinger Bands Mean-Reversion Strategy — Binance Cryptocurrency
 
-Parameters (xlsx: Bollinger Bands):
-  period  : 10–50,   default 20
-  std_dev : 0.5–3.0, default 2.0
-  source  : CLOSE | OPEN | HL2
+Signal logic:
+  BUY  when price crosses below the lower band.
+  SELL when price crosses above the upper band.
+
+Params: period (20), std_dev (2.0), source (CLOSE|OPEN|HL2)
 """
 from __future__ import annotations
 from collections import deque
@@ -24,10 +25,6 @@ from app.modules.backtest.strategies.ema_crossover import _get_price_series, _ge
 class BollingerBandsStrategy(BaseStrategy):
     display_name = "Bollinger Bands"
     strategy_id  = "BOLLINGER_BANDS"
-    description  = (
-        "Mean-reversion strategy. Buys when price crosses below the lower band "
-        "(oversold) and sells when price crosses above the upper band (overbought)."
-    )
 
     def _validate_config(self, config: Dict[str, Any]) -> None:
         try:
@@ -37,10 +34,10 @@ class BollingerBandsStrategy(BaseStrategy):
         except (TypeError, ValueError) as exc:
             raise StrategyConfigError(f"Bollinger Bands: invalid config — {exc}") from exc
 
-        if not (10 <= self.period <= 50):
-            raise StrategyConfigError("period must be 10–50")
-        if not (0.5 <= self.std_dev <= 3.0):
-            raise StrategyConfigError("std_dev must be 0.5–3.0")
+        if self.period < 2:
+            raise StrategyConfigError("period must be ≥ 2")
+        if self.std_dev <= 0:
+            raise StrategyConfigError("std_dev must be > 0")
         if self.source not in ("CLOSE", "OPEN", "HL2"):
             raise StrategyConfigError("source must be CLOSE, OPEN or HL2")
 
@@ -56,13 +53,15 @@ class BollingerBandsStrategy(BaseStrategy):
     def generate_signals(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
         prices = _get_price_series(df, self.source)
+
         df["bb_mid"]   = prices.rolling(self.period, min_periods=self.period).mean()
         df["bb_std"]   = prices.rolling(self.period, min_periods=self.period).std(ddof=1)
         df["bb_upper"] = df["bb_mid"] + self.std_dev * df["bb_std"]
         df["bb_lower"] = df["bb_mid"] - self.std_dev * df["bb_std"]
 
-        buy_sig  = (prices < df["bb_lower"]) & (prices.shift(1) >= df["bb_lower"].shift(1))
-        sell_sig = (prices > df["bb_upper"]) & (prices.shift(1) <= df["bb_upper"].shift(1))
+        prev_p = prices.shift(1)
+        buy_sig  = (prices < df["bb_lower"]) & (prev_p >= df["bb_lower"].shift(1))
+        sell_sig = (prices > df["bb_upper"]) & (prev_p <= df["bb_upper"].shift(1))
 
         df["signal"] = np.where(buy_sig, SIGNAL_BUY,
                        np.where(sell_sig, SIGNAL_SELL, SIGNAL_HOLD))
@@ -89,5 +88,7 @@ class BollingerBandsStrategy(BaseStrategy):
             elif price > upper and self._prev_price <= self._prev_upper:
                 signal = SIGNAL_SELL
 
-        self._prev_price, self._prev_upper, self._prev_lower = price, upper, lower
+        self._prev_price = price
+        self._prev_upper = upper
+        self._prev_lower = lower
         return signal

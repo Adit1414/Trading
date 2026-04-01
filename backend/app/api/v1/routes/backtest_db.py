@@ -21,6 +21,7 @@ from app.crud.backtests import (
     list_backtests_for_user,
 )
 from app.db.session import get_db
+from app.modules.backtest.chart import get_chart_path
 from app.schemas.db import BacktestDB, BacktestListItemDB
 
 logger = logging.getLogger(__name__)
@@ -70,10 +71,10 @@ async def get_one_backtest(backtest_id: str) -> BacktestDB:
         
         # Attempt to load chart_html from disk
         try:
-            from pathlib import Path
-            chart_path = Path(__file__).resolve().parent.parent.parent.parent.parent / "data" / "charts" / f"{backtest_id}.html"
-            if chart_path.exists():
-                db_obj.chart_html = chart_path.read_text(encoding="utf-8")
+            chart_path = get_chart_path(backtest_id)
+            if chart_path:
+                with open(chart_path, "r", encoding="utf-8") as f:
+                    db_obj.chart_html = f.read()
         except Exception as e:
             logger.warning("Failed to load chart HTML for backtest %s: %s", backtest_id, e)
             
@@ -104,9 +105,9 @@ async def delete_one_backtest(
         
     # Attempt to delete the chart file if it exists
     try:
-        from pathlib import Path
-        chart_path = Path(__file__).resolve().parent.parent.parent.parent.parent / "data" / "charts" / f"{backtest_id}.html"
-        if chart_path.exists():
-            chart_path.unlink()
+        chart_path_str = get_chart_path(backtest_id)
+        if chart_path_str:
+            import os
+            os.remove(chart_path_str)
     except Exception as e:
         logger.warning("Failed to delete chart HTML for backtest %s: %s", backtest_id, e)

@@ -9,6 +9,9 @@ import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import BacktestPage from './pages/BacktestPage'
 import BacktestDetailPage from './pages/BacktestDetailPage'
+import BotDashboardPage from './pages/BotDashboardPage'
+import CreateBotPage from './pages/CreateBotPage'
+import StrategiesHubPage from './pages/StrategiesHubPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -46,6 +49,10 @@ export default function App() {
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/backtests" element={<BacktestPage />} />
               <Route path="/backtests/:id" element={<BacktestDetailPage />} />
+              <Route path="/bots" element={<Navigate to="/bots/dashboard" replace />} />
+              <Route path="/bots/dashboard" element={<BotDashboardPage />} />
+              <Route path="/bots/create" element={<CreateBotPage />} />
+              <Route path="/strategies" element={<StrategiesHubPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

@@ -2,24 +2,17 @@
 app/modules/backtest/engine.py
 ────────────────────────────────
 Backtesting Engine Orchestrator — HLD §4.2, Module 2
+Binance / Cryptocurrency only (SRS §1.2)
 
 Pipeline:
   1. Fetch historical K-lines (LRU cached, Binance REST).
-  2. Build Pandas DataFrame.
-  3. Instantiate + validate strategy.
-  4. Vectorised signal generation → thread pool.
-  5. Trade simulation → thread pool.
-  6. Performance synthesis (all statistics).
-  7. Generate interactive Plotly HTML chart.
-  8. Persist result to BACKTESTS table (real DB — replaces stub).
-  9. Return BacktestRunResponse.
-
-DB persistence (step 8):
-  Looks up STRATEGIES row by type_code, then inserts into BACKTESTS with:
-    - parameters : full BacktestParameters dict
-    - metrics    : full BacktestStatistics dict
-    - result_file_url : None (Supabase Storage upload is a future enhancement)
-  Gracefully no-ops when DATABASE_URL is not configured.
+  2. Build Pandas DataFrame with candle source-price column.
+  3. Instantiate strategy from registry; validate config.
+  4. Off-load vectorised signal generation to ThreadPoolExecutor.
+  5. Off-load trade simulation to ThreadPoolExecutor.
+  6. Synthesize performance metrics.
+  7. Return BacktestRunResponse.
+  8. Persist to DB (stub — replace with PostgreSQL insert for Module 4).
 """
 
 from __future__ import annotations
@@ -29,8 +22,6 @@ import logging
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 
@@ -38,7 +29,12 @@ from app.core.config import settings
 from app.crud.backtests import create_backtest
 from app.crud.strategies import get_strategy_by_type_code
 from app.db.session import get_db
-from app.modules.backtest.chart_generator import generate_chart
+from app.modules.backtest.chart import (
+    _compute_chart_stats,
+    build_backtest_chart,
+    prepare_chart_dataframe,
+    save_chart_html,
+)
 from app.modules.backtest.data_cache import get_historical_data
 from app.modules.backtest.performance import simulate_trades, synthesize
 from app.modules.backtest.strategies import get_strategy
@@ -60,21 +56,22 @@ _thread_pool = ThreadPoolExecutor(
 
 
 class BacktestError(RuntimeError):
-    pass
+    """Raised when a backtest cannot be completed."""
 
 
 async def run_backtest(request: BacktestRunRequest) -> BacktestRunResponse:
     """Primary entry point — called by the API route handler."""
+
     backtest_id = str(uuid.uuid4())
     created_at  = datetime.now(tz=timezone.utc)
 
     logger.info(
-        "Backtest %s | %s %s %s [%s → %s]",
+        "Backtest %s | strategy=%s symbol=%s interval=%s [%s → %s]",
         backtest_id, request.strategy.value, request.symbol,
         request.interval.value, request.start_date, request.end_date,
     )
 
-    # ── 1. Fetch K-lines ──────────────────────────────────────────────────────
+    # ── 1. Fetch historical K-lines (LRU cached) ──────────────────────────────
     try:
         bars = await get_historical_data(
             market=request.trading_market.value,
@@ -98,7 +95,7 @@ async def run_backtest(request: BacktestRunRequest) -> BacktestRunResponse:
     # ── 2. Build DataFrame ────────────────────────────────────────────────────
     df = _bars_to_dataframe(bars)
 
-    # ── 3. Strategy ───────────────────────────────────────────────────────────
+    # ── 3. Instantiate and validate strategy ──────────────────────────────────
     try:
         strategy = get_strategy(request.strategy.value, request.strategy_config)
     except KeyError as exc:
@@ -108,12 +105,12 @@ async def run_backtest(request: BacktestRunRequest) -> BacktestRunResponse:
 
     if len(df) < strategy.min_bars_required:
         raise BacktestError(
-            f"Insufficient data: {request.strategy.value} needs ≥ "
+            f"Insufficient data: {request.strategy.value} requires at least "
             f"{strategy.min_bars_required} bars; got {len(df)}. "
             "Extend the date range or use a shorter interval."
         )
 
-    # ── 4. Signal generation (thread pool) ───────────────────────────────────
+    # ── 4. Vectorised signal generation (thread pool) ────────────────────────
     loop = asyncio.get_running_loop()
     try:
         df_signals = await loop.run_in_executor(
@@ -124,45 +121,37 @@ async def run_backtest(request: BacktestRunRequest) -> BacktestRunResponse:
 
     # ── 5. Trade simulation (thread pool) ────────────────────────────────────
     try:
-        equity_curve, raw_trades, final_value, commissions_paid = \
-            await loop.run_in_executor(
-                _thread_pool, _run_simulation, df_signals, request
-            )
+        equity_curve, raw_trades, _ = await loop.run_in_executor(
+            _thread_pool,
+            _run_simulation,
+            df_signals,
+            request,
+        )
     except Exception as exc:
         raise BacktestError(f"Trade simulation failed: {exc}") from exc
 
     # ── 6. Performance synthesis ──────────────────────────────────────────────
-    statistics, trade_records = synthesize(
-        equity_curve=equity_curve,
-        raw_trades=raw_trades,
-        initial_cash=request.initial_cash,
-        df=df_signals,
-        commissions_paid=commissions_paid,
-    )
+    statistics, trade_records = synthesize(equity_curve, raw_trades, request.initial_cash)
 
-    # ── 7. Plotly chart ───────────────────────────────────────────────────────
+    # ── 6b. Generate interactive Plotly chart ─────────────────────────────────
     try:
-        chart_html = await loop.run_in_executor(
+        chart_path = await loop.run_in_executor(
             _thread_pool,
-            _generate_chart_sync,
-            df_signals, equity_curve, raw_trades,
-            request.strategy.value, request.symbol, request.initial_cash,
+            _generate_chart,
+            df_signals,
+            request.initial_cash,
+            request.strategy.value,
+            backtest_id,
         )
-        
-        # Save to disk for later retrieval by the /backtests/{id} endpoint
-        charts_dir = Path(__file__).resolve().parent.parent.parent.parent / "data" / "charts"
-        charts_dir.mkdir(parents=True, exist_ok=True)
-        chart_path = charts_dir / f"{backtest_id}.html"
-        chart_path.write_text(chart_html, encoding="utf-8")
-        
+        logger.info("Chart generated → %s", chart_path)
     except Exception as exc:
         logger.warning("Chart generation failed (non-fatal): %s", exc)
-        chart_html = "<p>Chart unavailable</p>"
 
-    # ── 8. Assemble response ──────────────────────────────────────────────────
+    # ── 7. Assemble response ──────────────────────────────────────────────────
     duration_days = (request.end_date - request.start_date).days
 
     parameters = BacktestParameters(
+        name=request.name,
         strategy=request.strategy.value,
         strategy_config=request.strategy_config,
         symbol=request.symbol,
@@ -195,95 +184,18 @@ async def run_backtest(request: BacktestRunRequest) -> BacktestRunResponse:
         statistics=statistics,
         parameters=parameters,
         trade_log=trade_records,
-        chart_html=chart_html,
     )
 
     logger.info(
-        "Backtest %s done | trades=%d return=%.2f%% sharpe=%.2f",
-        backtest_id, statistics.total_trades,
-        statistics.total_return_pct, statistics.sharpe_ratio,
+        "Backtest %s completed | trades=%d return=%.2f%%",
+        backtest_id, statistics.total_trades, statistics.total_return_pct,
     )
 
-    # ── 9. Persist to BACKTESTS table (real DB) ───────────────────────────────
-    await _persist_result(
-        backtest_id=backtest_id,
-        request=request,
-        parameters=parameters,
-        statistics=statistics,
-    )
-
+    await _persist_result_stub(backtest_id, request, response)
     return response
 
 
-# ─── DB persistence ───────────────────────────────────────────────────────────
-
-async def _persist_result(
-    backtest_id: str,
-    request:     BacktestRunRequest,
-    parameters:  BacktestParameters,
-    statistics,
-) -> None:
-    """
-    Persist the backtest result to the BACKTESTS table.
-
-    Flow:
-      1. Open a DB session (no-ops gracefully if DATABASE_URL is unset).
-      2. Look up the STRATEGIES row by type_code to get the strategy_id FK.
-      3. Insert into BACKTESTS:
-           - parameters : full execution config as JSONB
-           - metrics    : scalar stats as JSONB
-           - result_file_url : None (Supabase Storage upload is future work)
-    """
-    async with get_db() as session:
-        if session is None:
-            logger.debug("DB not configured — skipping backtest persistence.")
-            return
-
-        try:
-            # Resolve strategy FK
-            strategy_row = await get_strategy_by_type_code(
-                session, request.strategy.value
-            )
-            if strategy_row is None:
-                logger.error(
-                    "Strategy type_code '%s' not found in STRATEGIES table. "
-                    "Did the seed run on startup?",
-                    request.strategy.value,
-                )
-                return
-
-            # Serialise statistics to a plain dict for JSONB storage
-            metrics_dict = statistics.model_dump()
-
-            # Serialise parameters to dict and include the user-defined name
-            params_dict = parameters.model_dump()
-            params_dict["name"] = request.name
-
-            row = await create_backtest(
-                session=session,
-                id=backtest_id,
-                user_id=request.user_id,           # None until Module 1 auth
-                strategy_id=strategy_row.id,
-                symbol=request.symbol,
-                timeframe=request.interval.value,
-                parameters=params_dict,
-                metrics=metrics_dict,
-                result_file_url=None,              # Supabase Storage: future
-            )
-            logger.info(
-                "Backtest persisted to DB: db_id=%s backtest_id=%s",
-                row.id, backtest_id,
-            )
-
-        except Exception as exc:
-            logger.error(
-                "Failed to persist backtest %s to DB: %s",
-                backtest_id, exc, exc_info=True,
-            )
-            # Non-fatal — the API response is already assembled
-
-
-# ─── Sync helpers (run in thread pool) ───────────────────────────────────────
+# ─── Synchronous helpers (run inside thread pool) ─────────────────────────────
 
 def _run_simulation(df: pd.DataFrame, req: BacktestRunRequest) -> tuple:
     return simulate_trades(
@@ -298,15 +210,18 @@ def _run_simulation(df: pd.DataFrame, req: BacktestRunRequest) -> tuple:
     )
 
 
-def _generate_chart_sync(df, equity_curve, raw_trades, strategy_id, symbol, initial_cash):
-    return generate_chart(
-        df=df,
-        equity_curve=equity_curve,
-        raw_trades=raw_trades,
-        strategy_id=strategy_id,
-        symbol=symbol,
-        initial_cash=initial_cash,
-    )
+def _generate_chart(
+    df_signals: pd.DataFrame,
+    initial_cash: float,
+    strategy_name: str,
+    backtest_id: str,
+) -> str:
+    """Build the interactive Plotly chart and save as HTML. Returns file path."""
+    chart_df = prepare_chart_dataframe(df_signals, initial_cash)
+    stats = _compute_chart_stats(chart_df, initial_cash)
+    fig = build_backtest_chart(chart_df, stats, strategy_name)
+    return save_chart_html(fig, backtest_id)
+
 
 
 def _bars_to_dataframe(bars: list[OHLCV]) -> pd.DataFrame:
@@ -321,3 +236,37 @@ def _bars_to_dataframe(bars: list[OHLCV]) -> pd.DataFrame:
     for col in ("open", "high", "low", "close", "volume"):
         df[col] = pd.to_numeric(df[col], errors="coerce")
     return df.dropna(subset=["open", "high", "low", "close"])
+
+
+# ─── DB persistence stub ─────────────────────────────────────────────────────
+
+async def _persist_result_stub(backtest_id: str, request: BacktestRunRequest, response: BacktestRunResponse) -> None:
+    """
+    Persist backtest result to DB.
+    """
+    try:
+        async with get_db() as session:
+            if session is None:
+                logger.warning("No DB session configured, skipping persistence for backtest %s", backtest_id)
+                return
+
+            strategy = await get_strategy_by_type_code(session, request.strategy.value)
+            if not strategy:
+                logger.warning("Could not find DB strategy %s, skipping persistence", request.strategy.value)
+                return
+
+            await create_backtest(
+                session=session,
+                id=backtest_id,
+                user_id=request.user_id,
+                strategy_id=strategy.id,
+                symbol=request.symbol,
+                timeframe=request.interval.value,
+                parameters=response.parameters.model_dump(mode="json"),
+                metrics=response.statistics.model_dump(mode="json"),
+                result_file_url=None,
+            )
+            await session.commit()
+            logger.debug("DB persist complete — backtest_id=%s", backtest_id)
+    except Exception as exc:
+        logger.exception("Failed to persist backtest %s to database", backtest_id)
