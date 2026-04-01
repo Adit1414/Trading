@@ -38,6 +38,7 @@ async def create_backtest(
     parameters:      dict,
     metrics:         dict,
     result_file_url: Optional[str] = None,
+    chart_html:      Optional[str] = None,
 ) -> BacktestModel:
     """
     Insert a new row into BACKTESTS and return the ORM instance.
@@ -63,6 +64,7 @@ async def create_backtest(
         "parameters": parameters,
         "metrics": metrics,
         "result_file_url": result_file_url,
+        "chart_html": chart_html,
     }
     if id is not None:
         kwargs["id"] = id

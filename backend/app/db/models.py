@@ -510,6 +510,11 @@ class BacktestModel(Base):
         nullable=True,
         comment="Pointer to equity_curve JSON in Supabase Storage",
     )
+    chart_html: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Self-contained Plotly HTML chart for this backtest run",
+    )
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True),
         nullable=False,
