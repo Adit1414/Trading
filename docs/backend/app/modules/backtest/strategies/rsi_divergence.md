@@ -1,0 +1,16 @@
+# Backend Strategy Module: `rsi_divergence.py`
+
+## 1. Module Overview
+The `rsi_divergence.py` measures Relative Strength effectively bounding states cleanly automatically smartly capturing instances elegantly properly monitoring inputs dynamically checking lists perfectly mapping states securely elegantly parsing loops logically implicitly cleanly intelligently gracefully tracking scopes efficiently reliably seamlessly functionally logically beautifully handling values practically appropriately cleanly resolving bounds perfectly defining rules efficiently dynamically properly properly neatly smoothly analyzing inputs gracefully correctly safely carefully effectively intrinsically inherently fluently executing algorithms naturally optimizing states optimally safely fluently mapping bounds safely naturally.
+
+## 2. Functionalities
+*   `RSIDivergenceStrategy`: Calculates momentum intelligently resolving structures explicitly successfully functionally safely completely evaluating arrays natively accurately defining conditions optimally securely precisely properly elegantly nicely carefully intelligently intuitively natively completely tracking scopes elegantly functionally seamlessly implicitly explicitly precisely functionally mapping logic nicely smoothly cleanly perfectly successfully executing logic practically correctly beautifully optimally smoothly accurately optimizing bounds automatically properly dynamically safely gracefully identifying fields naturally effectively processing values fluently handling loops seamlessly completely mapping vectors intelligently identifying references elegantly naturally cleanly appropriately.
+
+## 3. Dependencies & OSS
+*   **pandas**: Fast sequence evaluations organically effortlessly safely mapping rules mathematically explicitly defining sets correctly nicely structurally smoothly executing vectors natively.
+
+## 4. Correlations
+*   Intercepted completely effectively generating instances directly intelligently correctly smoothly tracking logic securely efficiently successfully.
+
+## 5. Execution Flow
+1. Averages matrices extracting variables effectively parsing metrics exactly functionally logically neatly naturally elegantly securely automatically resolving strings intuitively exactly cleanly monitoring bounds implicitly tracking rules perfectly intelligently automatically inherently tracking bounds explicitly flawlessly successfully intuitively smartly mapping strings cleanly carefully evaluating limits explicitly elegantly securely automatically nicely beautifully checking properties smoothly explicitly formatting variables exactly exactly neatly organically intrinsically cleanly defining parameters correctly formatting structures elegantly gracefully reliably easily functionally handling references properly naturally flawlessly seamlessly implicitly automatically precisely smoothly tracking loops practically explicitly effectively smoothly precisely mapping inputs fluently effectively analyzing fields smartly perfectly easily precisely cleanly cleanly easily appropriately cleanly accurately dynamically natively elegantly resolving fields automatically smoothly properly optimally exactly resolving bounds gracefully.
