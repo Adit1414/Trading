@@ -53,9 +53,15 @@ class Settings(BaseSettings):
     SUPABASE_URL: Optional[str] = None
     SUPABASE_ANON_KEY: Optional[str] = None
     SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
+    SUPABASE_JWT_SECRET: Optional[str] = None   # Project Settings → API → JWT Secret
 
     # ── Database – Module 4 integration stub ─────────────────────────────────
     DATABASE_URL: Optional[str] = None
+
+    # ── Redis – idempotency cache & future pub/sub ────────────────────────────
+    REDIS_URL: Optional[str] = None
+    # How long an idempotency key is kept before expiry (seconds, default 24 h)
+    IDEMPOTENCY_TTL_SECONDS: int = 86_400
 
     # ── CORS ─────────────────────────────────────────────────────────────────
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173"]

@@ -1,23 +1,26 @@
 import { useEffect, useState } from 'react'
 import { useBots, useUpdateBotState } from '../api/bots'
+import { useAuthStore } from '../stores/authStore'
 import toast from 'react-hot-toast'
 import { Bot, Play, Pause, Square, Activity, AlertTriangle } from 'lucide-react'
 
 export default function BotDashboardPage() {
   const { data: bots = [], isLoading, isError } = useBots()
   const { mutate: updateState } = useUpdateBotState()
+  const session = useAuthStore((s) => s.session)
 
   // Real-time SSE integration
   useEffect(() => {
-    // Assuming backend exposes this endpoint for user's bot events
-    const eventSource = new EventSource('http://localhost:8000/api/v1/bots/events', {
-      withCredentials: true
-    })
+    const token = session?.access_token
+    if (!token) return  // Don't open SSE if not authenticated
+
+    const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+    // EventSource cannot send custom headers — pass the JWT as a query param
+    const eventSource = new EventSource(`${baseURL}/bots/events?token=${token}`)
 
     eventSource.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data)
-        // e.g., payload = { type: 'ALERT', message: 'Circuit Breaker Triggered on BTC/USDT' }
         if (payload.type === 'ALERT' || payload.type === 'CIRCUIT_BREAKER') {
           toast.custom((t) => (
             <div style={{
@@ -34,6 +37,8 @@ export default function BotDashboardPage() {
           ), { duration: 6000 })
         } else if (payload.type === 'SUCCESS') {
           toast.success(payload.message)
+        } else if (payload.type === 'ERROR') {
+          console.warn('[SSE] Server error event:', payload.message)
         }
       } catch (err) {
         console.error('Failed to parse SSE data', err)
@@ -42,13 +47,13 @@ export default function BotDashboardPage() {
 
     eventSource.onerror = (err) => {
       console.error('SSE Error:', err)
-      // Automatically attempts reconnection behind the scenes
+      // Browser automatically retries the connection
     }
 
     return () => {
       eventSource.close()
     }
-  }, [])
+  }, [session])  // Re-open SSE whenever the session changes (login / token refresh)
 
   const handleToggleState = (bot) => {
     const targetState = bot.status === 'RUNNING' ? 'PAUSED' : 'RUNNING'

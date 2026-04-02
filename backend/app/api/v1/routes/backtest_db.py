@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.crud.backtests import (
     delete_backtest,
@@ -20,6 +20,7 @@ from app.crud.backtests import (
     list_all_backtests,
     list_backtests_for_user,
 )
+from app.core.auth import get_current_user
 from app.db.session import get_db
 from app.modules.backtest.chart import get_chart_path
 from app.schemas.db import BacktestDB, BacktestListItemDB
@@ -34,17 +35,14 @@ router = APIRouter(prefix="/backtests", tags=["Backtests (DB)"])
     summary="List saved backtest runs",
 )
 async def list_backtests(
-    user_id: Optional[str] = Query(default=None, description="Filter by user UUID"),
-    limit:   int           = Query(default=50, ge=1, le=200),
-    offset:  int           = Query(default=0,  ge=0),
+    limit:   int = 50,
+    offset:  int = 0,
+    user_id: str = Depends(get_current_user),
 ) -> List[BacktestListItemDB]:
     async with get_db() as session:
         if session is None:
             return []
-        if user_id:
-            rows = await list_backtests_for_user(session, user_id, limit, offset)
-        else:
-            rows = await list_all_backtests(session, limit, offset)
+        rows = await list_backtests_for_user(session, user_id, limit=limit, offset=offset)
         return [BacktestListItemDB.from_orm_row(r) for r in rows]
 
 
@@ -53,7 +51,10 @@ async def list_backtests(
     response_model=BacktestDB,
     summary="Get a single backtest by ID",
 )
-async def get_one_backtest(backtest_id: str) -> BacktestDB:
+async def get_one_backtest(
+    backtest_id: str,
+    user_id: str = Depends(get_current_user),
+) -> BacktestDB:
     async with get_db() as session:
         if session is None:
             raise HTTPException(
@@ -65,6 +66,12 @@ async def get_one_backtest(backtest_id: str) -> BacktestDB:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Backtest '{backtest_id}' not found.",
+            )
+        # Ensure user owns this backtest (allow NULL user_id for pre-auth legacy data if necessary, or enforce it)
+        if row.user_id is not None and row.user_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to access this backtest.",
             )
             
         db_obj = BacktestDB.model_validate(row)
@@ -91,7 +98,7 @@ async def get_one_backtest(backtest_id: str) -> BacktestDB:
 )
 async def delete_one_backtest(
     backtest_id: str,
-    user_id: Optional[str] = Query(default=None),
+    user_id: str = Depends(get_current_user),
 ) -> None:
     async with get_db() as session:
         if session is None:

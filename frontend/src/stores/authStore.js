@@ -59,14 +59,14 @@ export const useAuthStore = create((set, get) => ({
     return data
   },
 
-  loginAsGuest: () => {
-    console.log('[Auth] Logging in as Guest')
-    // Provide a mocked user session
-    const mockUser = { id: 'guest-123', email: 'guest@algotrading.local' }
-    const mockSession = { access_token: 'guest-token', user: mockUser }
-    set({ user: mockUser, session: mockSession, loading: false })
-    return { user: mockUser, session: mockSession }
-  },
+  // loginAsGuest: () => {
+  //   console.log('[Auth] Logging in as Guest')
+  //   // Provide a mocked user session
+  //   const mockUser = { id: 'guest-123', email: 'guest@algotrading.local' }
+  //   const mockSession = { access_token: 'guest-token', user: mockUser }
+  //   set({ user: mockUser, session: mockSession, loading: false })
+  //   return { user: mockUser, session: mockSession }
+  // },
 
   logout: async () => {
     const { error } = await supabase.auth.signOut()

@@ -26,9 +26,15 @@ export function useCreateBot() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (payload) => {
+    // 👇 Change 1: Accept the payload AND the key
+    mutationFn: async ({ payload, idempotencyKey }) => { 
       console.log('[useCreateBot] Sending payload:', payload)
-      const { data } = await api.post('/bots', payload)
+      const { data } = await api.post(
+        '/bots', 
+        payload,
+        // 👇 Change 2: Pass the header
+        { headers: { 'Idempotency-Key': idempotencyKey } }
+      )
       console.log('[useCreateBot] Response:', data)
       return data
     },
@@ -43,11 +49,11 @@ export function useCreateBot() {
  * Body: { targetState } (e.g. "PAUSED", "START", "STOP")
  * Returns: Bot info
  */
-export function useUpdateBotState(botId) {
+export function useUpdateBotState() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ targetState, idempotencyKey }) => {
+    mutationFn: async ({ botId, targetState, idempotencyKey }) => {
       console.log(`[useUpdateBotState ${botId}] Target state:`, targetState)
       const { data } = await api.put(
         `/bots/${botId}/state`,
