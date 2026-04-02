@@ -104,6 +104,10 @@ async def run_backtest(request: BacktestRunRequest) -> BacktestRunResponse:
     # we inject the config into the class dynamically for this run.
     # Note: In concurrent setups with the exact same class, this might race. 
     # A cleaner approach for backtesting is creating a dynamic subclass.
+    strategy_attrs = request.strategy_config.copy()
+    strategy_attrs["_order_size_mode"] = request.order_size_mode.value
+    strategy_attrs["_order_size_usdt"] = request.order_size_usdt
+    strategy_attrs["_order_size_pct"]  = request.order_size_pct
     DynamicStrategy = type("DynamicStrategy", (strategy_class,), request.strategy_config)
 
     # ── 5. Run backtest (thread pool) ─────────────────────────────────────────
@@ -226,12 +230,15 @@ def _run_backtest_sync(df: pd.DataFrame, strategy_class, req: BacktestRunRequest
     os.makedirs(os.path.abspath(_CHARTS_DIR), exist_ok=True)
     chart_path = os.path.join(os.path.abspath(_CHARTS_DIR), f"{backtest_id}.html")
     
+    # backtesting.py lacks a native slippage argument, so we combine it with commission
+    effective_commission = req.commission + req.slippage
+
     # Initialize backtest
     bt = Backtest(
         df, 
         strategy=strategy_class, 
         cash=req.initial_cash,
-        commission=req.commission,
+        commission=effective_commission,
         margin=1.0, 
         trade_on_close=False,
         hedging=False,
