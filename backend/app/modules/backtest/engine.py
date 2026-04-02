@@ -145,7 +145,7 @@ async def run_backtest(request: BacktestRunRequest) -> BacktestRunResponse:
     
     # ── Map stats ─────────────────────────────────────────────────────────────
     # stats_series contains all backtesting output metrics.
-    total_return_pct = stats_series["Return [%]"]
+    total_return_pct = stats_series["Return [%]"] if not pd.isna(stats_series["Return [%]"]) else 0.0
     final_equity = stats_series["Equity Final [$]"]
     
     # Drawdown metrics mapping
@@ -165,7 +165,7 @@ async def run_backtest(request: BacktestRunRequest) -> BacktestRunResponse:
         open_trades=0, # backtesting.py closes all if finalize_trades (default) OR we can't easily extract open
         avg_win=stats_series["_trades"][stats_series["_trades"]["PnL"] > 0]["PnL"].mean() if len(stats_series["_trades"][stats_series["_trades"]["PnL"] > 0]) > 0 else 0.0,
         avg_loss=stats_series["_trades"][stats_series["_trades"]["PnL"] <= 0]["PnL"].mean() if len(stats_series["_trades"][stats_series["_trades"]["PnL"] <= 0]) > 0 else 0.0,
-        profit_factor=stats_series["Profit Factor"],
+        profit_factor=stats_series["Profit Factor"] if not pd.isna(stats_series["Profit Factor"]) else 0.0,
         avg_trade_duration_bars=int(stats_series["Avg. Trade Duration"].total_seconds() / (df.index[1] - df.index[0]).total_seconds()) if len(df) > 1 and not pd.isna(stats_series["Avg. Trade Duration"]) else 0,
     )
 

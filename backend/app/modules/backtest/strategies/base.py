@@ -58,9 +58,9 @@ class BaseStrategy(Strategy):
             self.buy(size=size)
         else:
             usdt_size = getattr(self, "_order_size_usdt", 1000.0)
-            price = self.data.Close[-1]
-            units = usdt_size / price
-            self.buy(size=units)
+            size_fraction = usdt_size / self.equity
+            size = min(0.9999, size_fraction)
+            self.buy(size=size)
 
     def execute_sell(self):
         """Execute sell logic respecting Spot market constraints."""
