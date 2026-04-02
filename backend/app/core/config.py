@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     SUPABASE_URL: Optional[str] = None
     SUPABASE_ANON_KEY: Optional[str] = None
     SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
+    SUPABASE_JWT_SECRET: Optional[str] = None   # Project Settings → API → JWT Secret
 
     # ── Database – Module 4 integration stub ─────────────────────────────────
     DATABASE_URL: Optional[str] = None

@@ -19,8 +19,10 @@ from __future__ import annotations
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
+
+from app.core.auth import get_current_user
 
 from app.core.rate_limiter import BACKTEST_LIMIT, limiter
 from app.modules.backtest.chart import get_chart_path
@@ -49,17 +51,12 @@ router = APIRouter(prefix="/backtest", tags=["Backtesting Engine"])
 async def run_backtest_endpoint(
     request: Request,         # required by slowapi for IP extraction
     body: BacktestRunRequest,
+    user_id: str = Depends(get_current_user),
 ) -> BacktestRunResponse:
     """
     Execute a deterministic backtest and return the full report.
-
-    Module 1 integration note:
-        Replace the stub below with:
-            body.user_id = request.state.user_id
-        once the JWT middleware is active.
     """
     # ── Module 1 stub: inject user identity ───────────────────────────────────
-    user_id: Optional[str] = getattr(request.state, "user_id", None)
     body.user_id = user_id
 
     try:

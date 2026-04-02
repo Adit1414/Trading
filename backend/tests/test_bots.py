@@ -12,7 +12,7 @@ def test_bot_deployment():
     payload = {
         "symbol": "BTC/USDT",
         "is_testnet": True,
-        "strategy_id": "07ba7ec7-7257-4e5f-ada1-351473930409", # Will need a real UUID from your DB
+        "strategy_id": "5fc1781c-9a24-4a6c-bb99-1a4d08faf3d9", # Will need a real UUID from your DB
         "parameters": {"fast_ema": 12, "slow_ema": 26},
         "name": "Test Script Bot"
     }

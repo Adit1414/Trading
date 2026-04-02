@@ -33,13 +33,14 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import UUID4, BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
+from app.core.auth import decode_token, get_current_user
 from app.core.idempotency import IdempotencyContext, idempotency_dep
 from app.core.redis import get_redis
 from app.db.models import BotModel, BotStateModel
@@ -133,14 +134,17 @@ def _to_response(bot: BotModel) -> BotResponse:
     response_model=List[BotResponse],
     summary="List all bots",
 )
-async def get_bots() -> List[BotResponse]:
-    """Return all bots with live PnL pulled from their bot_state rows."""
+async def get_bots(
+    user_id: str = Depends(get_current_user),
+) -> List[BotResponse]:
+    """Return all bots belonging to the authenticated user with live PnL."""
     async with get_db() as session:
         if session is None:
             return []
         result = await session.execute(
             select(BotModel)
             .options(selectinload(BotModel.state))
+            .where(BotModel.user_id == user_id)
             .order_by(BotModel.created_at.desc())
         )
         bots = result.scalars().all()
@@ -155,9 +159,9 @@ async def get_bots() -> List[BotResponse]:
 )
 async def create_bot(
     body: BotCreate,
-    request: Request,
     background_tasks: BackgroundTasks,
     ctx: IdempotencyContext = Depends(idempotency_dep),
+    user_id: str = Depends(get_current_user),
 ) -> BotResponse:
     """
     Create a bot row and its companion bot_state row in one transaction.
@@ -178,7 +182,7 @@ async def create_bot(
         bot = BotModel(
             id=bot_id,
             symbol=body.symbol.upper(),
-            user_id=None,                          # pre-auth phase
+            user_id=user_id,
             strategy_id=str(body.strategy_id),
             name=body.name,
             environment=environment,
@@ -213,10 +217,7 @@ async def create_bot(
         bot.state = state
         response = _to_response(bot)
 
-    # DB transaction has committed — now safe to dispatch the engine
-    # user_id comes from JWT middleware once Module 1 is active;
-    # for now we read it from request.state (None in pre-auth phase).
-    user_id: Optional[str] = getattr(request.state, "user_id", None)
+    # DB transaction committed — dispatch engine in background
     background_tasks.add_task(engine_dispatch, bot_id, "RUNNING", user_id)
 
     # Store in Redis after the DB commit
@@ -232,9 +233,9 @@ async def create_bot(
 async def update_bot_state(
     bot_id: str,
     body: BotStateUpdate,
-    request: Request,
     background_tasks: BackgroundTasks,
     ctx: IdempotencyContext = Depends(idempotency_dep),
+    user_id: str = Depends(get_current_user),
 ) -> BotResponse:
     """
     Transition a bot between states.
@@ -304,7 +305,6 @@ async def update_bot_state(
         response = _to_response(bot)
 
     # DB transaction committed — dispatch the engine stub in the background
-    user_id: Optional[str] = getattr(request.state, "user_id", None)
     background_tasks.add_task(engine_dispatch, bot_id, target, user_id)
 
     await ctx.store(response.model_dump(mode="json"), status_code=200)
@@ -318,24 +318,36 @@ HEARTBEAT_INTERVAL = 15  # seconds
 import time
 
 @router.get("/events", summary="Live bot telemetry stream (SSE)")
-async def bot_events(request: Request):
+async def bot_events(
+    token: str = Query(..., description="Supabase access_token passed as a query param (SSE cannot use headers)"),
+):
     """
     Server-Sent Events endpoint — streams live bot telemetry to the frontend.
 
+    Auth: because EventSource cannot send custom headers, the caller must
+    append ?token=<access_token> to the URL.  The token is validated with
+    the same JWT logic used by every other endpoint.
+
     Event types (all JSON-parseable via JSON.parse(event.data)):
       HEARTBEAT       — sent every 15 s to keep the connection alive
-      SUCCESS         — bot lifecycle action completed (started / paused / stopped)
+      SUCCESS         — bot lifecycle action completed
       CIRCUIT_BREAKER — daily PnL limit reached, bot auto-paused
       ERROR           — unrecoverable engine error
 
-    Wire format:
-      data: {"type": "...", "message": "...", "bot_id": "..."}\n\n
-
-    Channel selection:
-      Subscribes to channel:user_{user_id}:events when auth is active,
-      or channel:global:events in the pre-auth phase.
+    Wire format:  data: {"type": "...", "message": "...", "bot_id": "..."}\n\n
     """
-    user_id: Optional[str] = getattr(request.state, "user_id", None)
+    try:
+        user_id: str = decode_token(token)
+    except Exception:
+        # Return 401 as an SSE error event so the client can handle it gracefully
+        async def _unauthorized():
+            yield 'data: {"type": "ERROR", "message": "Unauthorized"}\n\n'
+        return StreamingResponse(
+            _unauthorized(),
+            media_type="text/event-stream",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
     channel = channel_name(user_id)
     redis = get_redis()
 
@@ -350,13 +362,10 @@ async def bot_events(request: Request):
                 last_heartbeat = time.time()
 
                 while True:
-                    if await request.is_disconnected():
-                        logger.info("[SSE] Client disconnected from %s", channel)
-                        break
-
+                    # Client disconnect is signalled by CancelledError from Starlette
                     # Check for new messages from the engine
                     message = await pubsub.get_message(ignore_subscribe_messages=True)
-                    
+
                     if message is not None:
                         # Forward the raw Redis payload as an SSE frame
                         raw = message.get("data", "")
@@ -365,10 +374,10 @@ async def bot_events(request: Request):
                         if raw:
                             yield f"data: {raw}\n\n"
                     else:
-                        # No message? Wait half a second before checking again so we don't spam the CPU
+                        # No message — wait briefly before polling again
                         await asyncio.sleep(0.5)
 
-                    # If 15 seconds have passed since the last heartbeat, send a ping
+                    # Send heartbeat if the interval has elapsed
                     if time.time() - last_heartbeat >= HEARTBEAT_INTERVAL:
                         yield HEARTBEAT
                         last_heartbeat = time.time()
@@ -387,8 +396,6 @@ async def bot_events(request: Request):
         else:
             logger.warning("[SSE] Redis not configured — serving heartbeat-only stream")
             while True:
-                if await request.is_disconnected():
-                    break
                 yield HEARTBEAT
                 await asyncio.sleep(HEARTBEAT_INTERVAL)
 
