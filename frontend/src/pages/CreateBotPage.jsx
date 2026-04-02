@@ -50,7 +50,9 @@ export default function CreateBotPage() {
       stop_loss: stopLoss ? Number(stopLoss) : null,
     }
 
-    createBot(payload, {
+    const idempotencyKey = crypto.randomUUID()
+
+    createBot({ payload, idempotencyKey }, {
       onSuccess: () => {
         toast.success('Live bot deployed successfully!')
         navigate('/bots/dashboard')
