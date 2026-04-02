@@ -22,7 +22,7 @@ from app.crud.backtests import (
 )
 from app.core.auth import get_current_user
 from app.db.session import get_db
-from app.modules.backtest.chart import get_chart_path
+from app.modules.backtest.engine import get_chart_path
 from app.schemas.db import BacktestDB, BacktestListItemDB
 
 logger = logging.getLogger(__name__)

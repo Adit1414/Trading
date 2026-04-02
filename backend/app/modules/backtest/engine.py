@@ -3,16 +3,6 @@ app/modules/backtest/engine.py
 ────────────────────────────────
 Backtesting Engine Orchestrator — HLD §4.2, Module 2
 Binance / Cryptocurrency only (SRS §1.2)
-
-Pipeline:
-  1. Fetch historical K-lines (LRU cached, Binance REST).
-  2. Build Pandas DataFrame with candle source-price column.
-  3. Instantiate strategy from registry; validate config.
-  4. Off-load vectorised signal generation to ThreadPoolExecutor.
-  5. Off-load trade simulation to ThreadPoolExecutor.
-  6. Synthesize performance metrics.
-  7. Return BacktestRunResponse.
-  8. Persist to DB (stub — replace with PostgreSQL insert for Module 4).
 """
 
 from __future__ import annotations
@@ -20,30 +10,29 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from typing import Optional
 
 import pandas as pd
+from backtesting import Backtest
 
 from app.core.config import settings
 from app.crud.backtests import create_backtest
 from app.crud.strategies import get_strategy_by_type_code
 from app.db.session import get_db
-from app.modules.backtest.chart import (
-    _compute_chart_stats,
-    build_backtest_chart,
-    prepare_chart_dataframe,
-    save_chart_html,
-)
 from app.modules.backtest.data_cache import get_historical_data
-from app.modules.backtest.performance import simulate_trades, synthesize
-from app.modules.backtest.strategies import get_strategy
+from app.modules.backtest.strategies import get_strategy_class
 from app.modules.backtest.strategies.base import StrategyConfigError
 from app.schemas.backtest import (
     BacktestParameters,
     BacktestRunRequest,
     BacktestRunResponse,
     BacktestStatus,
+    BacktestStatistics,
+    EquityPoint,
+    TradeRecord,
 )
 from app.services.market_data.base import OHLCV
 
@@ -53,6 +42,8 @@ _thread_pool = ThreadPoolExecutor(
     max_workers=settings.BACKTEST_THREAD_POOL_SIZE,
     thread_name_prefix="backtest-worker",
 )
+
+_CHARTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "charts")
 
 
 class BacktestError(RuntimeError):
@@ -95,60 +86,41 @@ async def run_backtest(request: BacktestRunRequest) -> BacktestRunResponse:
     # ── 2. Build DataFrame ────────────────────────────────────────────────────
     df = _bars_to_dataframe(bars)
 
-    # ── 3. Instantiate and validate strategy ──────────────────────────────────
+    # ── 3. Find strategy class ────────────────────────────────────────────────
     try:
-        strategy = get_strategy(request.strategy.value, request.strategy_config)
+        strategy_class = get_strategy_class(request.strategy.value)
     except KeyError as exc:
         raise BacktestError(str(exc)) from exc
-    except StrategyConfigError as exc:
-        raise BacktestError(f"Strategy config error: {exc}") from exc
 
-    if len(df) < strategy.min_bars_required:
+    if len(df) < strategy_class.get_min_bars_required():
         raise BacktestError(
             f"Insufficient data: {request.strategy.value} requires at least "
-            f"{strategy.min_bars_required} bars; got {len(df)}. "
+            f"{strategy_class.get_min_bars_required()} bars; got {len(df)}. "
             "Extend the date range or use a shorter interval."
         )
 
-    # ── 4. Vectorised signal generation (thread pool) ────────────────────────
+    # ── 4. Set class properties per config ───────────────────────────────────
+    # Since backtesting.py uses class attributes for iteration/optimization mapping, 
+    # we inject the config into the class dynamically for this run.
+    # Note: In concurrent setups with the exact same class, this might race. 
+    # A cleaner approach for backtesting is creating a dynamic subclass.
+    DynamicStrategy = type("DynamicStrategy", (strategy_class,), request.strategy_config)
+
+    # ── 5. Run backtest (thread pool) ─────────────────────────────────────────
     loop = asyncio.get_running_loop()
     try:
-        df_signals = await loop.run_in_executor(
-            _thread_pool, strategy.generate_signals, df
-        )
-    except Exception as exc:
-        raise BacktestError(f"Signal generation failed: {exc}") from exc
-
-    # ── 5. Trade simulation (thread pool) ────────────────────────────────────
-    try:
-        equity_curve, raw_trades, _ = await loop.run_in_executor(
+        stats_series, chart_html = await loop.run_in_executor(
             _thread_pool,
-            _run_simulation,
-            df_signals,
+            _run_backtest_sync,
+            df,
+            DynamicStrategy,
             request,
+            backtest_id
         )
     except Exception as exc:
         raise BacktestError(f"Trade simulation failed: {exc}") from exc
 
-    # ── 6. Performance synthesis ──────────────────────────────────────────────
-    statistics, trade_records = synthesize(equity_curve, raw_trades, request.initial_cash)
-
-    # ── 6b. Generate interactive Plotly chart ─────────────────────────────────
-    chart_html: Optional[str] = None
-    try:
-        chart_html, chart_path = await loop.run_in_executor(
-            _thread_pool,
-            _generate_chart,
-            df_signals,
-            request.initial_cash,
-            request.strategy.value,
-            backtest_id,
-        )
-        logger.info("Chart generated → %s", chart_path)
-    except Exception as exc:
-        logger.warning("Chart generation failed (non-fatal): %s", exc)
-
-    # ── 7. Assemble response ──────────────────────────────────────────────────
+    # ── 6. Assemble response ──────────────────────────────────────────────────
     duration_days = (request.end_date - request.start_date).days
 
     parameters = BacktestParameters(
@@ -170,13 +142,64 @@ async def run_backtest(request: BacktestRunRequest) -> BacktestRunResponse:
         end_date=str(request.end_date),
         duration_days=duration_days,
     )
+    
+    # ── Map stats ─────────────────────────────────────────────────────────────
+    # stats_series contains all backtesting output metrics.
+    total_return_pct = stats_series["Return [%]"]
+    final_equity = stats_series["Equity Final [$]"]
+    
+    # Drawdown metrics mapping
+    max_dd_pct = stats_series["Max. Drawdown [%]"]
+    max_dd = -abs(max_dd_pct) / 100 * stats_series["Equity Peak [$]"]
+
+    statistics = BacktestStatistics(
+        total_return=final_equity - request.initial_cash,
+        total_return_pct=total_return_pct,
+        final_portfolio_value=final_equity,
+        win_rate=stats_series["Win Rate [%]"] if not pd.isna(stats_series["Win Rate [%]"]) else 0.0,
+        max_drawdown=max_dd if not pd.isna(max_dd) else 0.0,
+        max_drawdown_pct=max_dd_pct if not pd.isna(max_dd_pct) else 0.0,
+        total_trades=int(stats_series["# Trades"]),
+        winning_trades=len(stats_series["_trades"][stats_series["_trades"]["PnL"] > 0]),
+        losing_trades=len(stats_series["_trades"][stats_series["_trades"]["PnL"] <= 0]),
+        open_trades=0, # backtesting.py closes all if finalize_trades (default) OR we can't easily extract open
+        avg_win=stats_series["_trades"][stats_series["_trades"]["PnL"] > 0]["PnL"].mean() if len(stats_series["_trades"][stats_series["_trades"]["PnL"] > 0]) > 0 else 0.0,
+        avg_loss=stats_series["_trades"][stats_series["_trades"]["PnL"] <= 0]["PnL"].mean() if len(stats_series["_trades"][stats_series["_trades"]["PnL"] <= 0]) > 0 else 0.0,
+        profit_factor=stats_series["Profit Factor"],
+        avg_trade_duration_bars=int(stats_series["Avg. Trade Duration"].total_seconds() / (df.index[1] - df.index[0]).total_seconds()) if len(df) > 1 and not pd.isna(stats_series["Avg. Trade Duration"]) else 0,
+    )
+
+    # Trade records
+    trade_records = []
+    bt_trades = stats_series["_trades"]
+    for i, row in bt_trades.iterrows():
+        trade_records.append(TradeRecord(
+            trade_number=i+1,
+            direction="LONG" if row["Size"] > 0 else "SHORT",
+            entry_date=str(row["EntryTime"]),
+            entry_price=row["EntryPrice"],
+            exit_date=str(row["ExitTime"]),
+            exit_price=row["ExitPrice"],
+            quantity_usdt=abs(row["Size"]) * row["EntryPrice"],
+            pnl=row["PnL"],
+            return_pct=row["ReturnPct"] * 100,
+            status="CLOSED"
+        ))
+
+    equity_points = []
+    eq_curve = stats_series["_equity_curve"]
+    for ts, row in eq_curve.iterrows():
+        equity_points.append(EquityPoint(
+            timestamp=str(ts),
+            value=row["Equity"]
+        ))
 
     response = BacktestRunResponse(
         backtest_id=backtest_id,
         name=request.name,
         status=BacktestStatus.COMPLETED,
         created_at=created_at,
-        equity_curve=equity_curve,
+        equity_curve=equity_points,
         start_date=str(request.start_date),
         end_date=str(request.end_date),
         duration_days=duration_days,
@@ -198,47 +221,53 @@ async def run_backtest(request: BacktestRunRequest) -> BacktestRunResponse:
 
 # ─── Synchronous helpers (run inside thread pool) ─────────────────────────────
 
-def _run_simulation(df: pd.DataFrame, req: BacktestRunRequest) -> tuple:
-    return simulate_trades(
-        df=df,
-        initial_cash=req.initial_cash,
+def _run_backtest_sync(df: pd.DataFrame, strategy_class, req: BacktestRunRequest, backtest_id: str) -> tuple:
+    # Ensure charts directory exists
+    os.makedirs(os.path.abspath(_CHARTS_DIR), exist_ok=True)
+    chart_path = os.path.join(os.path.abspath(_CHARTS_DIR), f"{backtest_id}.html")
+    
+    # Initialize backtest
+    bt = Backtest(
+        df, 
+        strategy=strategy_class, 
+        cash=req.initial_cash,
         commission=req.commission,
-        slippage=req.slippage,
-        order_size_mode=req.order_size_mode,
-        order_size_pct=req.order_size_pct,
-        order_size_usdt=req.order_size_usdt,
-        intraday=req.intraday,
+        margin=1.0, 
+        trade_on_close=False,
+        hedging=False,
+        exclusive_orders=True 
     )
 
+    # Run
+    stats = bt.run()
+    
+    # Try generating chart, fall back string if failed
+    chart_html = ""
+    try:
+        # Generate bokeh interactive chart 
+        # this will write full HTML to the file path specified.
+        bt.plot(filename=chart_path, open_browser=False, resample=False)
+        with open(chart_path, "r", encoding="utf-8") as f:
+            chart_html = f.read()
+    except Exception as e:
+        logger.warning(f"Failed to generate backtesting chart: {e}")
 
-def _generate_chart(
-    df_signals: pd.DataFrame,
-    initial_cash: float,
-    strategy_name: str,
-    backtest_id: str,
-) -> tuple[str, str]:
-    """Build the interactive Plotly chart, save as HTML, and return (html_str, file_path)."""
-    chart_df = prepare_chart_dataframe(df_signals, initial_cash)
-    stats = _compute_chart_stats(chart_df, initial_cash)
-    fig = build_backtest_chart(chart_df, stats, strategy_name)
-    chart_path = save_chart_html(fig, backtest_id)
-    html_str = fig.to_html(include_plotlyjs=True, full_html=True)
-    return html_str, chart_path
-
+    return stats, chart_html
 
 
 def _bars_to_dataframe(bars: list[OHLCV]) -> pd.DataFrame:
+    # backtesting.py expects capitalized columns including Open, High, Low, Close, Volume
     records = [
-        {"timestamp": b.timestamp, "open": b.open, "high": b.high,
-         "low": b.low, "close": b.close, "volume": b.volume}
+        {"timestamp": b.timestamp, "Open": b.open, "High": b.high,
+         "Low": b.low, "Close": b.close, "Volume": b.volume}
         for b in bars
     ]
     df = pd.DataFrame(records)
     df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
     df = df.set_index("timestamp").sort_index()
-    for col in ("open", "high", "low", "close", "volume"):
+    for col in ("Open", "High", "Low", "Close", "Volume"):
         df[col] = pd.to_numeric(df[col], errors="coerce")
-    return df.dropna(subset=["open", "high", "low", "close"])
+    return df.dropna(subset=["Open", "High", "Low", "Close"])
 
 
 # ─── DB persistence stub ─────────────────────────────────────────────────────
@@ -249,9 +278,6 @@ async def _persist_result_stub(
     response: BacktestRunResponse,
     chart_html: Optional[str] = None,
 ) -> None:
-    """
-    Persist backtest result to DB.
-    """
     try:
         async with get_db() as session:
             if session is None:
@@ -279,3 +305,11 @@ async def _persist_result_stub(
             logger.debug("DB persist complete — backtest_id=%s", backtest_id)
     except Exception as exc:
         logger.exception("Failed to persist backtest %s to database", backtest_id)
+
+def get_chart_path(backtest_id: str) -> Optional[str]:
+    """Return the absolute path to a saved chart, or None if not found."""
+    charts_dir = os.path.abspath(_CHARTS_DIR)
+    filepath = os.path.join(charts_dir, f"{backtest_id}.html")
+    if os.path.exists(filepath):
+        return filepath
+    return None

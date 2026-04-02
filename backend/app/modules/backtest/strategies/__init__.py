@@ -7,9 +7,6 @@ To add a new strategy:
   1. Implement BaseStrategy in a new file inside this package.
   2. Import it here and add it to STRATEGY_REGISTRY.
   3. Add its name to app/schemas/backtest.py::StrategyName.
-
-Module 4 (Bot Execution) imports `get_strategy` from this registry
-to instantiate the configured strategy for live trading.
 """
 
 from __future__ import annotations
@@ -30,17 +27,9 @@ STRATEGY_REGISTRY: Dict[str, Type[BaseStrategy]] = {
 }
 
 
-def get_strategy(strategy_id: str, config: Dict[str, Any]) -> BaseStrategy:
+def get_strategy_class(strategy_id: str) -> Type[BaseStrategy]:
     """
-    Instantiate and return a configured strategy by its ID.
-
-    Args:
-        strategy_id: One of the keys in STRATEGY_REGISTRY.
-        config:      Strategy-specific parameter dict.
-
-    Raises:
-        KeyError:              Unknown strategy_id.
-        StrategyConfigError:   Invalid config parameters.
+    Return strategy class by its ID.
     """
     cls = STRATEGY_REGISTRY.get(strategy_id.upper())
     if cls is None:
@@ -48,18 +37,16 @@ def get_strategy(strategy_id: str, config: Dict[str, Any]) -> BaseStrategy:
             f"Unknown strategy '{strategy_id}'. "
             f"Available: {list(STRATEGY_REGISTRY)}"
         )
-    return cls(config)
+    return cls
 
 
 def list_strategies() -> list[dict]:
-    """Return metadata for all registered strategies (for a /strategies endpoint)."""
+    """Return metadata for all registered strategies."""
     return [
         {
             "id": key,
             "display_name": cls.display_name,
-            "min_bars_required": cls({}).min_bars_required
-            if hasattr(cls({}), "min_bars_required")
-            else None,
+            "min_bars_required": cls.get_min_bars_required(),
         }
         for key, cls in STRATEGY_REGISTRY.items()
     ]
@@ -72,6 +59,6 @@ __all__ = [
     "BollingerBandsStrategy",
     "MACDSignalStrategy",
     "STRATEGY_REGISTRY",
-    "get_strategy",
+    "get_strategy_class",
     "list_strategies",
 ]
