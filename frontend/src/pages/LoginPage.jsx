@@ -66,10 +66,6 @@ export default function LoginPage() {
     }
   }
 
-  const handleGuest = () => {
-    useAuthStore.getState().loginAsGuest()
-    toast.success('Logged in as Guest!')
-  }
 
   // Shared icon wrapper style (reused for all fields)
   const iconStyle = {
@@ -322,18 +318,6 @@ export default function LoginPage() {
                 }
               </button>
             </form>
-
-            {/* Divider */}
-            <div style={{ display:'flex', alignItems:'center', gap:'12px', margin:'20px 0' }}>
-              <div style={{ flex:1, height:'1px', background:'rgba(255,255,255,0.06)' }} />
-              <span style={{ fontSize:'11px', color:'#334155', userSelect:'none' }}>or</span>
-              <div style={{ flex:1, height:'1px', background:'rgba(255,255,255,0.06)' }} />
-            </div>
-
-            {/* Guest */}
-            <button type="button" onClick={handleGuest} className="login-guest">
-              Continue as Guest →
-            </button>
 
             {/* Footer */}
             <p style={{ textAlign:'center', fontSize:'11px', color:'#1e293b', marginTop:'20px', userSelect:'none' }}>
