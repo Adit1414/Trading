@@ -5,6 +5,7 @@ import {
 import { useNavigate } from 'react-router-dom'
 import MetricCard from '../components/MetricCard'
 import PortfolioPerformanceCard from '../components/PortfolioPerformanceCard'
+import { useAuthStore } from '../stores/authStore'   // ← ADDED
 
 const RECENT_TRADES = [
   { id: 1, pair: 'BTC/USDT', side: 'BUY',  time: '2 mins ago',   profit: '+$145.20', isWin: true  },
@@ -22,6 +23,9 @@ const MARKET_TICKERS = [
 
 export default function DashboardPage() {
   const navigate = useNavigate()
+  const { user } = useAuthStore()                                           // ← ADDED
+
+  const displayName = user?.fullName ?? user?.email ?? 'Trader'            // ← ADDED
 
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px 28px' }}>
@@ -32,8 +36,9 @@ export default function DashboardPage() {
           <h1 style={{ fontSize: '26px', fontWeight: 700, color: 'white', letterSpacing: '-0.02em', lineHeight: 1 }}>
             Dashboard
           </h1>
+          {/* ↓ CHANGED: was static string, now shows fullName → email → 'Trader' */}
           <p style={{ fontSize: '13px', color: '#64748b', marginTop: '6px' }}>
-            Welcome back. Here is your real-time portfolio overview.
+            Welcome back, {displayName}. Here is your real-time portfolio overview.
           </p>
         </div>
 

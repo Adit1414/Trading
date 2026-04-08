@@ -29,17 +29,19 @@ export default function Layout() {
   const location   = useLocation()
   const [open, setOpen] = useState(false)
 
-  /* Close on navigation */
+  // ── Derived display values ─────────────────────────────────
+  const displayName   = user?.user_metadata?.full_name || user?.email || 'Guest'
+  const avatarLetter  = displayName[0]?.toUpperCase() || 'G'
+  // ──────────────────────────────────────────────────────────
+
   useEffect(() => { setOpen(false) }, [location.pathname])
 
-  /* Close on Escape */
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') setOpen(false) }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  /* Lock body scroll when sidebar is open */
   useEffect(() => {
     document.body.style.overflow = open ? 'hidden' : ''
     return () => { document.body.style.overflow = '' }
@@ -129,14 +131,9 @@ export default function Layout() {
                 to={item.path}
                 className={({ isActive }) => isActive ? '_nav-active' : '_nav-idle'}
                 style={({ isActive }) => ({
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  padding: '10px 14px',
-                  borderRadius: '12px',
-                  fontSize: '14px',
-                  fontWeight: 500,
-                  textDecoration: 'none',
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  padding: '10px 14px', borderRadius: '12px',
+                  fontSize: '14px', fontWeight: 500, textDecoration: 'none',
                   transition: 'all 0.18s ease',
                   border: isActive ? '1px solid rgba(129,140,248,0.22)' : '1px solid transparent',
                   background: isActive ? 'rgba(129,140,248,0.1)' : 'transparent',
@@ -161,33 +158,25 @@ export default function Layout() {
           </div>
         </nav>
 
-        {/* User panel */}
+        {/* Sidebar — User panel */}
         <div style={{ padding: '12px', borderTop: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
           <div
             className="flex items-center gap-3 rounded-xl transition-colors cursor-default"
-            style={{
-              padding: '10px 12px',
-              background: 'rgba(255,255,255,0.03)',
-              border: '1px solid rgba(255,255,255,0.06)',
-            }}
+            style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
           >
             {/* Avatar */}
             <div
               className="flex items-center justify-center shrink-0"
-              style={{
-                width: '32px', height: '32px', borderRadius: '50%',
-                background: 'rgba(129,140,248,0.15)',
-                border: '1px solid rgba(129,140,248,0.3)',
-              }}
+              style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(129,140,248,0.15)', border: '1px solid rgba(129,140,248,0.3)' }}
             >
               <span style={{ fontSize: '12px', fontWeight: 700, color: '#818cf8' }}>
-                {user?.email?.[0]?.toUpperCase() || 'G'}
+                {avatarLetter} {/* ← CHANGED */}
               </span>
             </div>
             {/* Info */}
             <div className="flex-1 min-w-0">
               <p style={{ fontSize: '12px', fontWeight: 600, color: 'white' }} className="truncate">
-                {user?.email || 'Guest'}
+                {displayName} {/* ← CHANGED */}
               </p>
               <p style={{ fontSize: '10px', color: '#475569' }}>Pro Plan</p>
             </div>
@@ -213,11 +202,9 @@ export default function Layout() {
         <header
           className="sticky top-0 z-30 flex items-center shrink-0"
           style={{
-            height: '70px',
-            padding: '0 20px',
+            height: '70px', padding: '0 20px',
             background: 'rgba(11,18,33,0.85)',
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
+            backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
             borderBottom: '1px solid rgba(255,255,255,0.06)',
             gap: '14px',
           }}
@@ -238,10 +225,7 @@ export default function Layout() {
           <div className="flex items-center gap-2.5 shrink-0">
             <div
               className="flex items-center justify-center"
-              style={{
-                width: '28px', height: '28px', borderRadius: '8px',
-                background: 'linear-gradient(135deg, #818cf8, #6366f1)',
-              }}
+              style={{ width: '28px', height: '28px', borderRadius: '8px', background: 'linear-gradient(135deg, #818cf8, #6366f1)' }}
             >
               <span className="text-white font-bold text-xs leading-none">N</span>
             </div>
@@ -262,10 +246,9 @@ export default function Layout() {
             {currentTitle}
           </span>
 
-          {/* Spacer */}
           <div style={{ flex: 1 }} />
 
-          {/* Right: Avatar */}
+          {/* Topbar — Right avatar pill */}
           <button
             onClick={() => setOpen(true)}
             className="flex items-center gap-2 rounded-xl transition-all"
@@ -275,21 +258,17 @@ export default function Layout() {
           >
             <div
               className="flex items-center justify-center shrink-0"
-              style={{
-                width: '28px', height: '28px', borderRadius: '50%',
-                background: 'rgba(129,140,248,0.15)',
-                border: '1px solid rgba(129,140,248,0.3)',
-              }}
+              style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(129,140,248,0.15)', border: '1px solid rgba(129,140,248,0.3)' }}
             >
               <span style={{ fontSize: '11px', fontWeight: 700, color: '#818cf8' }}>
-                {user?.email?.[0]?.toUpperCase() || 'G'}
+                {avatarLetter} {/* ← CHANGED */}
               </span>
             </div>
             <span
               className="hidden md:block truncate"
               style={{ fontSize: '13px', color: '#94a3b8', maxWidth: '130px', fontWeight: 500 }}
             >
-              {user?.email || 'Guest'}
+              {displayName} {/* ← CHANGED */}
             </span>
           </button>
         </header>
