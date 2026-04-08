@@ -38,9 +38,24 @@ export default function CreateBotPage() {
     setParameters((prev) => ({ ...prev, [key]: Number(value) }))
   }
 
+  const EMA_CROSSOVER_ID = '11111111-1111-4111-8111-111111111111'
+
   const handleSubmit = (e) => {
     e.preventDefault()
-    
+
+    // ── EMA Crossover circuit-breaker validation ───────────────
+    if (strategyId === EMA_CROSSOVER_ID) {
+      if (takeProfit !== '' && Number(takeProfit) <= 0) {
+        toast.error('Upper Bound (Take Profit) must be positive.')
+        return
+      }
+      if (stopLoss !== '' && Number(stopLoss) >= 0) {
+        toast.error('Lower Bound (Stop Loss) must be negative.')
+        return
+      }
+    }
+    // ──────────────────────────────────────────────────────────
+
     const payload = {
       symbol: asset,
       is_testnet: isTestnet,
