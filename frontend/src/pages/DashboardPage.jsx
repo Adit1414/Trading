@@ -40,6 +40,22 @@ export default function DashboardPage() {
         {/* Action buttons */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
           <button
+            onClick={() => navigate('/paper-trading')}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '7px',
+              padding: '9px 16px', borderRadius: '12px',
+              background: 'rgba(245, 158, 11, 0.1)',
+              border: '1px solid rgba(245, 158, 11, 0.2)',
+              color: '#fcd34d', fontSize: '13px', fontWeight: 600,
+              cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(245, 158, 11, 0.18)'; e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.35)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(245, 158, 11, 0.1)'; e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.2)' }}
+          >
+            <Activity size={15} strokeWidth={2} />
+            Paper Trading
+          </button>
+          <button
             onClick={() => navigate('/backtests')}
             style={{
               display: 'flex', alignItems: 'center', gap: '7px',
