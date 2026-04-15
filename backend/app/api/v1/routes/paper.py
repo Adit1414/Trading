@@ -14,8 +14,8 @@ from sqlalchemy.orm import selectinload
 
 from app.core.auth import get_current_user
 from app.db.session import get_db
-from app.db.models import BotModel, PaperTradeLedgerModel, ApiKeyModel, StrategyModel
 from app.core.security import encrypt_api_key, decrypt_api_key
+from app.db.models import BotModel, PaperTradeLedgerModel, ApiKeyModel, StrategyModel, PortfolioHistoryModel
 from app.services.market_data.binance import get_binance_testnet_client
 import ccxt.async_support as ccxt
 
@@ -178,36 +178,45 @@ async def get_paper_portfolio(
     finally:
         await exchange.close()
 
-    now = datetime.datetime.now()
+    now = datetime.datetime.now(datetime.timezone.utc)
     data = []
     
     if tf == "1H":
-        # Simulate last 60 minutes, ticks every 10 min
-        steps = 6
-        delta = datetime.timedelta(minutes=10)
+        # Get snapshots from the last 1 hour
+        start_time = now - datetime.timedelta(hours=1)
         time_fmt = "%H:%M"
     elif tf == "4H":
-        # Simulate last 4 hours, ticks every 30 min
-        steps = 8
-        delta = datetime.timedelta(minutes=30)
+        # Get snapshots from the last 4 hours
+        start_time = now - datetime.timedelta(hours=4)
         time_fmt = "%H:%M"
     elif tf == "1W":
-        # Simulate last 7 days, ticks every day
-        steps = 7
-        delta = datetime.timedelta(days=1)
+        # Get snapshots from the last 7 days
+        start_time = now - datetime.timedelta(days=7)
         time_fmt = "%b %d"
     else:  # "1D" default
-        # Simulate last 24 hours, ticks every 4 hours
-        steps = 6
-        delta = datetime.timedelta(hours=4)
+        # Get snapshots from the last 24 hours
+        start_time = now - datetime.timedelta(hours=24)
         time_fmt = "%H:%M"
 
-    for i in range(steps, 0, -1):
-        dt = now - (delta * i)
-        offset = random.uniform(-0.02, 0.02) * tot_usdt
-        val = max(tot_usdt + offset, 0)
-        data.append({"name": dt.strftime(time_fmt), "equity": round(val, 2)})
-    
+    async with get_db() as session:
+        result = await session.execute(
+            select(PortfolioHistoryModel)
+            .where(PortfolioHistoryModel.user_id == user_id)
+            .where(PortfolioHistoryModel.environment == "TESTNET")
+            .where(PortfolioHistoryModel.timestamp >= start_time)
+            .order_by(PortfolioHistoryModel.timestamp.asc())
+        )
+        history = result.scalars().all()
+
+    for record in history:
+        # Convert timestamp to local or display format
+        data.append({
+            "name": record.timestamp.strftime(time_fmt),
+            "equity": round(float(record.total_balance), 2)
+        })
+
+    # Always append the absolute latest real-time live value from CCXT
+    # If there wasn't any history, we at least show this single point.
     data.append({"name": now.strftime(time_fmt), "equity": round(tot_usdt, 2)})
 
     return data

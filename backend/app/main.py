@@ -14,6 +14,8 @@ Architecture (HLD §3):
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
+import asyncio
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,6 +29,7 @@ from app.core.config import settings
 from app.core.idempotency import _CachedResponse
 from app.core.rate_limiter import limiter
 from app.core.redis import close_redis
+from app.core.tasks import portfolio_snapshot_task
 
 logging.basicConfig(
     level=logging.DEBUG if settings.DEBUG else logging.INFO,
@@ -34,6 +37,30 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info(
+        "%s v%s starting up — DEBUG=%s",
+        settings.APP_NAME, settings.APP_VERSION, settings.DEBUG,
+    )
+    logger.info("CORS origins: %s", settings.CORS_ORIGINS)
+    logger.info(
+        "Backtest rate limit: %d req / %ds",
+        settings.BACKTEST_RATE_LIMIT,
+        settings.BACKTEST_RATE_LIMIT_WINDOW,
+    )
+
+    # Start the continuous background snapshot task lock loop
+    snapshot_bg_task = asyncio.create_task(portfolio_snapshot_task())
+
+    yield
+
+    # Shutdown
+    logger.info("%s shutting down.", settings.APP_NAME)
+    snapshot_bg_task.cancel()
+    await close_redis()
 
 def create_app() -> FastAPI:
     app = FastAPI(
@@ -47,6 +74,7 @@ def create_app() -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",
+        lifespan=lifespan,
     )
 
     # ── Rate limiting (slowapi) ───────────────────────────────────────────────
@@ -87,25 +115,6 @@ def create_app() -> FastAPI:
 
     # ── Routes ────────────────────────────────────────────────────────────────
     app.include_router(api_router, prefix=settings.API_V1_STR)
-
-    # ── Startup / shutdown lifecycle ──────────────────────────────────────────
-    @app.on_event("startup")
-    async def _on_startup() -> None:
-        logger.info(
-            "%s v%s starting up — DEBUG=%s",
-            settings.APP_NAME, settings.APP_VERSION, settings.DEBUG,
-        )
-        logger.info("CORS origins: %s", settings.CORS_ORIGINS)
-        logger.info(
-            "Backtest rate limit: %d req / %ds",
-            settings.BACKTEST_RATE_LIMIT,
-            settings.BACKTEST_RATE_LIMIT_WINDOW,
-        )
-
-    @app.on_event("shutdown")
-    async def _on_shutdown() -> None:
-        logger.info("%s shutting down.", settings.APP_NAME)
-        await close_redis()
 
     # ── Global health endpoint ────────────────────────────────────────────────
     @app.get("/health", tags=["Health"], include_in_schema=True)

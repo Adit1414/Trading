@@ -25,6 +25,8 @@ import {
 import { usePaperBots, usePaperLedger, usePaperPortfolio, useSubmitPaperKeys, useRevokePaperKeys } from '../api/paper';
 import { useStrategies } from '../api/strategies';
 import { useCreateBot } from '../api/bots';
+import { useAuthStore } from '../stores/authStore';
+import { useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import PortfolioPerformanceCard from '../components/PortfolioPerformanceCard';
 
@@ -53,12 +55,46 @@ export default function PaperTradingPage() {
   const { mutate: submitKeys, isPending: isSubmittingKeys } = useSubmitPaperKeys();
   const { mutate: revokeKeys, isPending: isRevokingKeys } = useRevokePaperKeys();
 
+  const session = useAuthStore((s) => s.session);
+  const queryClient = useQueryClient();
+
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [apiSecretInput, setApiSecretInput] = useState('');
 
   // We infer lack of keys if portfolio returns an error (404)
   const hasKeys = !portfolioError && portfolioData && !loadingPortfolio;
+
+  // Real-time SSE integration for testnet metrics
+  React.useEffect(() => {
+    const token = session?.access_token;
+    if (!token) return;
+
+    const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+    const eventSource = new EventSource(`${baseURL}/bots/events?token=${token}`);
+
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === 'SUCCESS') {
+          // Immediately refresh the simulated charts and tables if an order was filled
+          queryClient.invalidateQueries({ queryKey: ['paperLedger'] });
+          queryClient.invalidateQueries({ queryKey: ['paperPortfolio'] });
+          queryClient.invalidateQueries({ queryKey: ['paperBots'] });
+        }
+      } catch (err) {
+        console.error('Failed to parse SSE data', err);
+      }
+    };
+
+    eventSource.onerror = (err) => {
+      console.error('SSE Error:', err);
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [session, queryClient]);
 
   // Set default strategy when strategies load
   React.useEffect(() => {

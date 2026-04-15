@@ -636,3 +636,44 @@ class BacktestModel(Base):
 
     def __repr__(self) -> str:
         return f"<Backtest id={self.id} symbol={self.symbol} timeframe={self.timeframe}>"
+
+
+# ─── PORTFOLIO_HISTORY ────────────────────────────────────────────────────────
+
+class PortfolioHistoryModel(Base):
+    """
+    Snapshots of user portfolios over time.
+    """
+    __tablename__ = "portfolio_history"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=_uuid
+    )
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    environment: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="TESTNET",
+        comment="TESTNET or MAINNET",
+    )
+    total_balance: Mapped[float] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+    )
+    timestamp: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        index=True,
+    )
+
+    # ── Relationships ─────────────────────────────────────────────────────────
+    # (Optional: can add relationship to UserModel if needed)
+    
+    def __repr__(self) -> str:
+        return f"<PortfolioHistory user={self.user_id} env={self.environment} bal={self.total_balance}>"
