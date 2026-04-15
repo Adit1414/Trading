@@ -30,8 +30,15 @@ import json
 import logging
 from typing import Optional
 
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+
 from app.core.redis import get_redis
 from app.modules.bots.events import channel_name, make_event
+from app.db.session import get_db
+from app.db.models import BotModel, PaperTradeLedgerModel, ApiKeyModel
+from app.core.security import decrypt_api_key
+from app.services.market_data.binance import get_binance_testnet_client
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +66,76 @@ async def _publish(
     except Exception as exc:
         # Never let a publish failure propagate — it would crash the BackgroundTask
         logger.warning("[Engine] Redis publish failed (channel=%s): %s", channel, exc)
+
+
+async def execute_trade(bot_id: str, side: str, user_id: str, quantity: float = 10.0, symbol: str = "BTCUSDT") -> None:
+    """
+    Called by the bot logic when deciding to place a trade.
+    """
+    logger.info("[Engine] Executing trade %s for bot_id=%s", side, bot_id)
+    try:
+        async with get_db() as session:
+            result = await session.execute(select(BotModel).where(BotModel.id == bot_id))
+            bot = result.scalar_one_or_none()
+            if not bot:
+                return
+
+            if bot.environment == "TESTNET":
+                logger.info("[Engine] TESTNET environment detected, placing paper trade for bot_id=%s", bot_id)
+                # Retrieve the user's decrypted Binance Testnet API keys
+                key_result = await session.execute(select(ApiKeyModel).where(ApiKeyModel.user_id == user_id))
+                api_key_record = key_result.scalar_one_or_none()
+                if not api_key_record:
+                    raise Exception("No paper trading keys found for user.")
+                
+                api_key = decrypt_api_key(api_key_record.binance_testnet_api_key)
+                secret = decrypt_api_key(api_key_record.binance_testnet_secret)
+
+                exchange = get_binance_testnet_client(api_key, secret)
+                
+                try:
+                    # Use CCXT testnet to execute a live MARKET order
+                    order = await exchange.create_market_order(bot.symbol, side.lower(), quantity)
+                    exec_price = order.get('average') or order.get('price') or 0.0
+                    
+                    # Calculate cost (simplified pnl logic here, can be expanded)
+                    # Insert a new row into PaperTradeLedgerModel
+                    ledger_entry = PaperTradeLedgerModel(
+                        bot_id=bot_id,
+                        pair=bot.symbol,
+                        side=side.upper(),
+                        execution_price=exec_price,
+                        quantity=quantity,
+                        realized_pnl=0.0,
+                        is_win=True
+                    )
+                    session.add(ledger_entry)
+                    await session.commit()
+                    
+                    # Emit SSE telemetry event using make_event structure
+                    await _publish(
+                        user_id=user_id,
+                        event_type="SUCCESS",
+                        message=f"Paper trade executed: {side} {quantity} {bot.symbol} @ {exec_price}",
+                        bot_id=bot_id
+                    )
+                except Exception as exchange_exc:
+                    await exchange.close()
+                    raise exchange_exc
+                finally:
+                    await exchange.close()
+            else:
+                # MAINNET logic (Module 5) goes here
+                pass
+
+    except Exception as exc:
+        logger.exception("[Engine] ERROR executing trade for bot_id=%s", bot_id)
+        await _publish(
+            user_id=user_id,
+            event_type="ERROR",
+            message=f"Bot {bot_id} trade failed: {str(exc)}",
+            bot_id=bot_id,
+        )
 
 
 # ─── Engine stubs ─────────────────────────────────────────────────────────────

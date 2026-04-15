@@ -92,6 +92,9 @@ class UserModel(Base):
     backtests: Mapped[list["BacktestModel"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    api_keys: Mapped[list["ApiKeyModel"]] = relationship(
+        cascade="all, delete-orphan", back_populates="user"
+    )
 
     def __repr__(self) -> str:
         return f"<User id={self.id} email={self.email}>"
@@ -144,6 +147,47 @@ class ApiCredentialModel(Base):
 
     def __repr__(self) -> str:
         return f"<ApiCredential user={self.user_id} env={self.environment}>"
+
+
+# ─── API_KEYS (PAPER TRADING) ─────────────────────────────────────────────────
+
+class ApiKeyModel(Base):
+    """
+    Binance testnet API keys for paper trading. Securely linked to users.
+    Keys are stored symmetrically encrypted at rest (using ENCRYPTION_KEY).
+    """
+    __tablename__ = "api_keys"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=_uuid
+    )
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    binance_testnet_api_key: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+    )
+    binance_testnet_secret: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    # ── Relationships ─────────────────────────────────────────────────────────
+    user: Mapped["UserModel"] = relationship(back_populates="api_keys")
+
+    def __repr__(self) -> str:
+        return f"<ApiKey id={self.id} user={self.user_id}>"
+
+
 
 
 # ─── STRATEGIES ───────────────────────────────────────────────────────────────
@@ -299,6 +343,9 @@ class BotModel(Base):
     trade_logs: Mapped[list["TradeLogModel"]] = relationship(
         back_populates="bot", cascade="all, delete-orphan"
     )
+    paper_trades: Mapped[list["PaperTradeLedgerModel"]] = relationship(
+        back_populates="bot", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<Bot id={self.id} name={self.name} status={self.status}>"
@@ -445,6 +492,63 @@ class TradeLogModel(Base):
 
     def __repr__(self) -> str:
         return f"<TradeLog id={self.id} {self.side} {self.symbol} @ {self.execution_price}>"
+
+
+# ─── PAPER_TRADE_LEDGER ───────────────────────────────────────────────────────
+
+class PaperTradeLedgerModel(Base):
+    """
+    Executed trades during Paper Trading (TESTNET).
+    """
+    __tablename__ = "paper_trade_ledger"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=_uuid
+    )
+    bot_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("bots.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    pair: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+    side: Mapped[str] = mapped_column(
+        String(4),
+        nullable=False,
+        comment="BUY or SELL",
+    )
+    execution_price: Mapped[float] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+    )
+    quantity: Mapped[float] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+    )
+    realized_pnl: Mapped[float | None] = mapped_column(
+        Numeric(20, 8),
+        nullable=True,
+    )
+    is_win: Mapped[bool | None] = mapped_column(
+        Boolean,
+        nullable=True,
+    )
+    timestamp: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    # ── Relationships ─────────────────────────────────────────────────────────
+    bot: Mapped["BotModel"] = relationship(back_populates="paper_trades")
+
+    def __repr__(self) -> str:
+        return f"<PaperTradeLedger id={self.id} {self.side} {self.pair} @ {self.execution_price}>"
+
+
 
 
 # ─── BACKTESTS ────────────────────────────────────────────────────────────────

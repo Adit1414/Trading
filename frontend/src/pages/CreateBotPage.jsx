@@ -1,16 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useCreateBot } from '../api/bots'
+import { useStrategies } from '../api/strategies'
 import toast from 'react-hot-toast'
 import { ArrowLeft, Rocket, Settings2, ShieldAlert } from 'lucide-react'
 
 const ASSETS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'AVAX/USDT']
-const STRATEGIES = {
-  '11111111-1111-4111-8111-111111111111': { name: 'EMA Crossover', params: { fast_ema: 12, slow_ema: 26 } },
-  '22222222-2222-4222-8222-222222222222': { name: 'RSI Divergence', params: { rsi_period: 14, overbought: 70, oversold: 30 } },
-  '33333333-3333-4333-8333-333333333333': { name: 'Bollinger Mean Reversion', params: { length: 20, mult: 2.0 } },
-  '44444444-4444-4444-8444-444444444444': { name: 'Momentum Breakout', params: { lookback: 20, threshold: 1.5 } },
-}
 
 export default function CreateBotPage() {
   const navigate = useNavigate()
@@ -19,29 +14,50 @@ export default function CreateBotPage() {
 
   const defaultState = location.state || {}
 
+  const { data: strategies = [], isLoading: isLoadingStrategies } = useStrategies()
+
   const [asset, setAsset] = useState(defaultState.symbol || ASSETS[0])
   const [isTestnet, setIsTestnet] = useState(true)
-  const [strategyId, setStrategyId] = useState(defaultState.strategy || Object.keys(STRATEGIES)[0])
-  const [parameters, setParameters] = useState(defaultState.parameters || STRATEGIES[strategyId || Object.keys(STRATEGIES)[0]].params)
+  const [strategyId, setStrategyId] = useState(defaultState.strategy || '')
+  const [parameters, setParameters] = useState(defaultState.parameters || {})
   
   const [takeProfit, setTakeProfit] = useState('')
   const [stopLoss, setStopLoss] = useState('')
 
   useEffect(() => {
-    // If not using pre-filled params, reset params when strategy changes
-    if (!defaultState.parameters || defaultState.strategy !== strategyId) {
-      setParameters(STRATEGIES[strategyId]?.params || {})
+    // Select first strategy initially if none selected
+    if (strategies.length > 0 && !strategyId && !defaultState.strategy) {
+      setStrategyId(strategies[0].id)
     }
-  }, [strategyId, defaultState])
+  }, [strategies, strategyId, defaultState])
 
-  const handleParamChange = (key, value) => {
-    setParameters((prev) => ({ ...prev, [key]: Number(value) }))
+  useEffect(() => {
+    // When strategy changes (and not using defaultState params), load its default parameters
+    if (strategies.length > 0 && strategyId && defaultState.strategy !== strategyId) {
+      const selected = strategies.find(s => s.id === strategyId)
+      if (selected && selected.parameter_schema?.properties) {
+        let p = {}
+        Object.entries(selected.parameter_schema.properties).forEach(([k, v]) => {
+          p[k] = v.default || 0
+        })
+        setParameters(p)
+      } else {
+        setParameters({})
+      }
+    }
+  }, [strategyId, strategies, defaultState])
+
+  const handleParamChange = (key, value, type) => {
+    const val = type === 'integer' || type === 'number' ? Number(value) : value
+    setParameters((prev) => ({ ...prev, [key]: val }))
   }
 
   const handleSubmit = (e) => {
     e.preventDefault()
     
+    const selectedStrategy = strategies.find(s => s.id === strategyId)
     const payload = {
+      name: `Main Bot - ${asset} - ${selectedStrategy?.name || 'Strategy'}`,
       symbol: asset,
       is_testnet: isTestnet,
       strategy_id: strategyId,
@@ -148,18 +164,19 @@ export default function CreateBotPage() {
               <select
                 value={strategyId}
                 onChange={(e) => setStrategyId(e.target.value)}
+                disabled={isLoadingStrategies}
                 style={{
                   width: '100%', padding: '12px 14px', borderRadius: '12px',
                   background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)',
                   color: 'white', fontSize: '14px', outline: 'none'
                 }}
               >
-                {Object.entries(STRATEGIES).map(([id, s]) => (
-                  <option key={id} value={id} style={{ background: '#0f1729' }}>{s.name}</option>
-                ))}
-                {/* Support custom strategy injected via state */}
-                {!STRATEGIES[strategyId] && (
-                  <option value={strategyId} style={{ background: '#0f1729' }}>{strategyId} (Custom)</option>
+                {isLoadingStrategies ? (
+                  <option>Loading...</option>
+                ) : (
+                  strategies.map(s => (
+                    <option key={s.id} value={s.id} style={{ background: '#0f1729' }}>{s.name}</option>
+                  ))
                 )}
               </select>
             </div>
@@ -170,22 +187,45 @@ export default function CreateBotPage() {
             <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
               <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#94a3b8', marginBottom: '12px' }}>Strategy Parameters</label>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px' }}>
-                {Object.entries(parameters).map(([key, val]) => (
-                  <div key={key}>
-                    <p style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px', textTransform: 'uppercase' }}>{key.replace(/_/g, ' ')}</p>
-                    <input
-                      type="number"
-                      value={val}
-                      onChange={(e) => handleParamChange(key, e.target.value)}
-                      style={{
-                        width: '100%', padding: '10px 14px', borderRadius: '10px',
-                        background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)',
-                        color: 'white', fontSize: '14px', outline: 'none'
-                      }}
-                      required
-                    />
-                  </div>
-                ))}
+                {Object.entries(parameters).map(([key, val]) => {
+                  const schema = strategies.find(s => s.id === strategyId)?.parameter_schema?.properties?.[key]
+                  const isEnum = schema?.enum
+                  
+                  return (
+                    <div key={key}>
+                      <p style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px', textTransform: 'uppercase' }}>
+                        {key.replace(/_/g, ' ')}
+                      </p>
+                      {isEnum ? (
+                        <select
+                          value={val}
+                          onChange={(e) => handleParamChange(key, e.target.value, schema.type)}
+                          style={{
+                            width: '100%', padding: '10px 14px', borderRadius: '10px',
+                            background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)',
+                            color: 'white', fontSize: '14px', outline: 'none'
+                          }}
+                        >
+                          {schema.enum.map(opt => (
+                            <option key={opt} value={opt} style={{ background: '#0f1729' }}>{opt}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="number"
+                          value={val}
+                          onChange={(e) => handleParamChange(key, e.target.value, schema?.type || 'number')}
+                          style={{
+                            width: '100%', padding: '10px 14px', borderRadius: '10px',
+                            background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)',
+                            color: 'white', fontSize: '14px', outline: 'none'
+                          }}
+                          required
+                        />
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}

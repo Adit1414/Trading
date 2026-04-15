@@ -8,9 +8,11 @@ from app.api.v1.routes import backtest
 from app.api.v1.routes import backtest_db
 from app.api.v1.routes import strategies_db
 from app.api.v1.routes import bots
+from app.api.v1.routes import paper
 
 api_router = APIRouter()
 api_router.include_router(backtest.router)
 api_router.include_router(backtest_db.router)
 api_router.include_router(strategies_db.router)
 api_router.include_router(bots.router)
+api_router.include_router(paper.router)

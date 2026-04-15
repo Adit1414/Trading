@@ -57,6 +57,9 @@ class Settings(BaseSettings):
 
     # ── Database – Module 4 integration stub ─────────────────────────────────
     DATABASE_URL: Optional[str] = None
+    
+    # ── Security ─────────────────────────────────────────────────────────────
+    ENCRYPTION_KEY: Optional[str] = None
 
     # ── Redis – idempotency cache & future pub/sub ────────────────────────────
     REDIS_URL: Optional[str] = None

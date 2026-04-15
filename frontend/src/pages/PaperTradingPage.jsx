@@ -20,19 +20,10 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 
-const MOCK_ACTIVE_PAPER_BOTS = [
-  { id: 1, pair: 'BTC/USDT', strategy: 'EMA CROSSOVER', pnl: '+$450.20', isWin: true, uptime: '14h 22m' },
-  { id: 2, pair: 'ETH/USDT', strategy: 'RSI DIVERGENCE', pnl: '-$120.50', isWin: false, uptime: '4h 10m' },
-  { id: 3, pair: 'SOL/USDT', strategy: 'MACD TREND', pnl: '+$89.00', isWin: true, uptime: '2d 4h' },
-];
-
-const MOCK_PAPER_LEDGER = [
-  { id: 101, pair: 'BTC/USDT', side: 'BUY', price: '$64,230.00', time: '10 mins ago', pnl: '+$12.50', isWin: true },
-  { id: 102, pair: 'ETH/USDT', side: 'SELL', price: '$3,450.00', time: '1 hour ago', pnl: '-$5.20', isWin: false },
-  { id: 103, pair: 'SOL/USDT', side: 'BUY', price: '$145.20', time: '3 hours ago', pnl: '+$45.00', isWin: true },
-  { id: 104, pair: 'AVAX/USDT', side: 'SELL', price: '$24.50', time: '5 hours ago', pnl: '+$8.40', isWin: true },
-  { id: 105, pair: 'BTC/USDT', side: 'SELL', price: '$64,100.00', time: '12 hours ago', pnl: '-$15.20', isWin: false },
-];
+import { usePaperBots, usePaperLedger, usePaperPortfolio } from '../api/paper';
+import { useStrategies } from '../api/strategies';
+import { useCreateBot } from '../api/bots';
+import toast from 'react-hot-toast';
 
 const CHART_DATA = [
   { time: '00:00', price: 64100 },
@@ -46,8 +37,78 @@ const CHART_DATA = [
 
 export default function PaperTradingPage() {
   const [allocation, setAllocation] = useState('1000');
-  const [strategy, setStrategy] = useState('EMA Crossover');
+  const [strategyId, setStrategyId] = useState('');
+  const [assetMode, setAssetMode] = useState('BTC/USDT');
   const [activeTimeframe, setActiveTimeframe] = useState('1D');
+
+  const { data: activeBots = [], isLoading: loadingBots } = usePaperBots();
+  const { data: ledgerTrades = [], isLoading: loadingLedger } = usePaperLedger();
+  const { data: portfolioData = [], isLoading: loadingPortfolio, isError: portfolioError } = usePaperPortfolio();
+  
+  const { data: strategiesData = [] } = useStrategies();
+  const { mutate: createBot, isPending: isDeploying } = useCreateBot();
+
+  // Set default strategy when strategies load
+  React.useEffect(() => {
+    if (strategiesData.length > 0 && !strategyId) {
+      setStrategyId(strategiesData[0].id);
+    }
+  }, [strategiesData, strategyId]);
+
+  const currentBalance = portfolioData?.length > 0 ? portfolioData[portfolioData.length - 1].equity : 0.0;
+  const rawPnl = portfolioData?.length > 0 && portfolioData[0].equity > 0 
+    ? (currentBalance - portfolioData[0].equity) 
+    : 0.0;
+  const pnlPercent = portfolioData?.length > 0 && portfolioData[0].equity > 0
+    ? ((rawPnl / portfolioData[0].equity) * 100).toFixed(2)
+    : '0.00';
+  const pnlPrefix = rawPnl >= 0 ? '+' : '';
+  const pnlColorClass = rawPnl >= 0 ? 'text-emerald-500' : 'text-rose-500';
+  const pnlIconClass = rawPnl >= 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400';
+
+  const globalWins = ledgerTrades.filter(t => t.isWin).length;
+  const globalWinRate = ledgerTrades.length > 0 
+    ? ((globalWins / ledgerTrades.length) * 100).toFixed(1) 
+    : 0;
+  const globalLossRate = ledgerTrades.length > 0 
+    ? (100 - parseFloat(globalWinRate)).toFixed(1) 
+    : 0;
+
+  const handleDeploy = (e) => {
+    e.preventDefault();
+    if (!strategyId) return toast.error('Please select a strategy');
+
+    const selectedStrategy = strategiesData.find(s => s.id === strategyId);
+    
+    // Auto-fill default params from requested schema
+    let defaultParams = {};
+    if (selectedStrategy?.parameter_schema?.properties) {
+      Object.entries(selectedStrategy.parameter_schema.properties).forEach(([k, v]) => {
+        defaultParams[k] = v.default || 0;
+      });
+    }
+
+    const payload = {
+      symbol: assetMode,
+      is_testnet: true,
+      strategy_id: strategyId,
+      parameters: defaultParams,
+      take_profit: null,
+      stop_loss: null,
+      name: `Paper Bot - ${assetMode} - ${selectedStrategy?.name}`
+    };
+
+    const idempotencyKey = crypto.randomUUID();
+
+    createBot({ payload, idempotencyKey }, {
+      onSuccess: () => {
+        toast.success(`Virtual bot for ${assetMode} deployed to Testnet!`);
+      },
+      onError: (err) => {
+        toast.error(err.response?.data?.detail || 'Failed to deploy virtual bot');
+      }
+    });
+  };
 
   return (
     <div className="min-h-screen bg-[#0f1729] text-white font-sans selection:bg-blue-500/30">
@@ -92,10 +153,10 @@ export default function PaperTradingPage() {
             </div>
             <div className="flex flex-col gap-[4px]">
               <div className="text-[32px] font-bold text-white tracking-tight leading-none">
-                $100,000.00
+                ${currentBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
-              <div className="text-[12px] text-slate-500 leading-none">
-                Initial balance: $100,000.00
+              <div className={"text-[12px] leading-none " + (portfolioError ? "text-rose-500" : "text-slate-500")}>
+                {portfolioError ? "Live API Error or No Keys" : "Synced via CCXT"}
               </div>
             </div>
           </div>
@@ -105,16 +166,16 @@ export default function PaperTradingPage() {
               <span className="text-[12px] font-bold text-slate-500 uppercase tracking-widest leading-none">
                 Simulated PnL (24h)
               </span>
-              <div className="w-[32px] h-[32px] rounded-full bg-emerald-500/20 flex items-center justify-center">
-                <TrendingUp className="w-[16px] h-[16px] text-emerald-400" />
+              <div className={`w-[32px] h-[32px] rounded-full flex items-center justify-center ${pnlIconClass}`}>
+                <TrendingUp className="w-[16px] h-[16px] currentColor" />
               </div>
             </div>
             <div className="flex items-baseline gap-[8px]">
-              <div className="text-[32px] font-bold text-emerald-500 tracking-tight leading-none">
-                +$1,450.20
+              <div className={`text-[32px] font-bold tracking-tight leading-none ${pnlColorClass}`}>
+                {pnlPrefix}${Math.abs(rawPnl).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
-              <div className="text-[14px] text-emerald-500/80 font-bold leading-none">
-                +1.45%
+              <div className={`text-[14px] font-bold leading-none ${pnlColorClass} opacity-80`}>
+                {pnlPrefix}{pnlPercent}%
               </div>
             </div>
           </div>
@@ -130,10 +191,10 @@ export default function PaperTradingPage() {
             </div>
             <div className="flex flex-col gap-[4px]">
               <div className="text-[32px] font-bold text-white tracking-tight leading-none">
-                3
+                {activeBots.length}
               </div>
               <div className="text-[12px] text-slate-500 leading-none">
-                Across 3 different pairs
+                Across {new Set(activeBots.map(b => b.pair)).size} different pairs
               </div>
             </div>
           </div>
@@ -150,15 +211,15 @@ export default function PaperTradingPage() {
             <div className="flex flex-col gap-[12px]">
               <div className="flex items-end justify-between leading-none">
                 <div className="text-[32px] font-bold text-white tracking-tight leading-none">
-                  68.5%
+                  {globalWinRate}%
                 </div>
                 <div className="text-[12px] text-slate-400 font-bold leading-none">
-                  31.5%
+                  {globalLossRate}%
                 </div>
               </div>
               <div className="flex w-full h-[10px] rounded-full overflow-hidden bg-slate-800">
-                <div className="h-full bg-emerald-500" style={{ width: '68.5%' }} />
-                <div className="h-full bg-rose-500" style={{ width: '31.5%' }} />
+                <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${globalWinRate}%` }} />
+                <div className="h-full bg-rose-500 transition-all duration-500" style={{ width: `${globalLossRate}%` }} />
               </div>
             </div>
           </div>
@@ -197,7 +258,7 @@ export default function PaperTradingPage() {
 
               <div className="h-[300px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={CHART_DATA} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                  <AreaChart data={portfolioData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
                     <defs>
                       <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
@@ -206,7 +267,7 @@ export default function PaperTradingPage() {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                     <XAxis
-                      dataKey="time"
+                      dataKey="name"
                       stroke="#475569"
                       fontSize={11}
                       tickMargin={12}
@@ -214,7 +275,7 @@ export default function PaperTradingPage() {
                       tickLine={false}
                     />
                     <YAxis
-                      domain={['dataMin - 100', 'dataMax + 200']}
+                      domain={['dataMin', 'dataMax']}
                       stroke="#475569"
                       fontSize={11}
                       tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`}
@@ -234,7 +295,7 @@ export default function PaperTradingPage() {
                     />
                     <Area
                       type="monotone"
-                      dataKey="price"
+                      dataKey="equity"
                       stroke="#3b82f6"
                       strokeWidth={2}
                       fillOpacity={1}
@@ -252,14 +313,29 @@ export default function PaperTradingPage() {
                  Deploy Virtual Bot
               </h3>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-[24px]">
+              <form className="grid grid-cols-1 sm:grid-cols-2 gap-[24px]" onSubmit={handleDeploy}>
+                <div className="flex flex-col gap-[12px] sm:col-span-2">
+                  <label className="text-[12px] font-bold text-slate-500 uppercase tracking-widest leading-none">
+                    Asset Pair
+                  </label>
+                  <select
+                    value={assetMode}
+                    onChange={(e) => setAssetMode(e.target.value)}
+                    className="w-full h-[52px] bg-[#0a0f1c] border border-white/5 rounded-xl px-[16px] text-white text-[14px] focus:outline-none focus:border-blue-500 appearance-none cursor-pointer"
+                  >
+                    <option value="BTCUSDT">BTC/USDT</option>
+                    <option value="ETHUSDT">ETH/USDT</option>
+                    <option value="SOLUSDT">SOL/USDT</option>
+                  </select>
+                </div>
+
                 <div className="flex flex-col gap-[12px]">
                   <label className="text-[12px] font-bold text-slate-500 uppercase tracking-widest leading-none">
                     Select Strategy
                   </label>
                   <select
-                    value={strategy}
-                    onChange={(e) => setStrategy(e.target.value)}
+                    value={strategyId}
+                    onChange={(e) => setStrategyId(e.target.value)}
                     className="w-full h-[52px] bg-[#0a0f1c] border border-white/5 rounded-xl px-[16px] text-white text-[14px] focus:outline-none focus:border-blue-500 appearance-none cursor-pointer"
                     style={{
                         backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%23475569' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
@@ -268,10 +344,9 @@ export default function PaperTradingPage() {
                         backgroundSize: '24px 24px',
                       }}
                   >
-                    <option>EMA Crossover</option>
-                    <option>RSI Divergence</option>
-                    <option>MACD Trend</option>
-                    <option>Bollinger Bands Reversion</option>
+                    {strategiesData.map(st => (
+                      <option key={st.id} value={st.id}>{st.name}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -291,12 +366,11 @@ export default function PaperTradingPage() {
                     />
                   </div>
                 </div>
-              </div>
-
-              <button className="w-full h-[56px] rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-[14px] transition-colors flex items-center justify-center gap-[8px]">
+              <button type="submit" onClick={handleDeploy} disabled={isDeploying} className="w-full h-[56px] rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-[14px] transition-colors flex items-center justify-center gap-[8px] mt-[8px]">
                 <Play className="w-[16px] h-[16px] fill-current" />
-                Launch Paper Bot
+                {isDeploying ? 'Deploying...' : 'Launch Paper Bot'}
               </button>
+            </form>
             </div>
           </div>
 
@@ -308,12 +382,12 @@ export default function PaperTradingPage() {
                 Active Simulations
               </h3>
               <span className="flex items-center justify-center px-[8px] py-[2px] rounded-md bg-blue-600 text-[12px] font-bold text-white leading-none tracking-wide">
-                {MOCK_ACTIVE_PAPER_BOTS.length}
+                {activeBots.length}
               </span>
             </div>
 
             <div className="flex flex-col gap-[16px]">
-              {MOCK_ACTIVE_PAPER_BOTS.map((bot) => (
+              {activeBots.map((bot) => (
                 <div
                   key={bot.id}
                   className="p-[16px] rounded-xl bg-white/[0.02] border border-white/5 flex flex-col gap-[16px]"
@@ -338,7 +412,7 @@ export default function PaperTradingPage() {
                       <span className="text-[14px] text-white font-medium leading-none">{bot.uptime}</span>
                     </div>
                     <span className={`text-[14px] font-bold leading-none ${bot.isWin ? 'text-emerald-500' : 'text-rose-500'}`}>
-                      {bot.pnl}
+                      {bot.pnl >= 0 ? '+' : ''}${Math.abs(bot.pnl).toLocaleString(undefined, {minimumFractionDigits: 2})}
                     </span>
                   </div>
                 </div>
@@ -368,8 +442,8 @@ export default function PaperTradingPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {MOCK_PAPER_LEDGER.map((trade) => (
-                  <tr key={trade.id} className="hover:bg-white/[0.02] transition-colors">
+                {ledgerTrades.map((trade, i) => (
+                  <tr key={i} className="hover:bg-white/[0.02] transition-colors">
                     <td className="px-[24px] py-[16px] text-[14px] font-bold text-white">
                       {trade.pair}
                     </td>
@@ -385,17 +459,17 @@ export default function PaperTradingPage() {
                       </span>
                     </td>
                     <td className="px-[24px] py-[16px] text-[14px] text-slate-300">
-                      {trade.price}
+                      ${trade.price?.toLocaleString()}
                     </td>
                     <td className="px-[24px] py-[16px] text-[14px] text-slate-500">
-                      {trade.time}
+                      {new Date(trade.time).toLocaleString()}
                     </td>
                     <td
                       className={`px-[24px] py-[16px] text-[14px] font-bold text-right ${
                         trade.isWin ? 'text-emerald-500' : 'text-rose-500'
                       }`}
                     >
-                      {trade.pnl}
+                      {trade.pnl >= 0 ? '+' : ''}${Math.abs(trade.pnl).toLocaleString(undefined, {minimumFractionDigits: 2})}
                     </td>
                   </tr>
                 ))}

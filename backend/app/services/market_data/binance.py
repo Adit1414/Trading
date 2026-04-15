@@ -43,6 +43,7 @@ import httpx
 
 from app.core.config import settings
 from app.services.market_data.base import OHLCV, MarketDataProvider
+import ccxt.async_support as ccxt
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,23 @@ def _parse_row(row: list) -> OHLCV:
         close=float(row[4]),
         volume=float(row[5]),
     )
+
+
+def get_binance_testnet_client(api_key: str, secret: str) -> ccxt.binance:
+    """
+    Creates an async CCXT client for Binance, routed exclusively to the testnet.
+    """
+    exchange = ccxt.binance({
+        "apiKey": api_key,
+        "secret": secret,
+        "enableRateLimit": True,
+        "options": {
+            "defaultType": "spot",
+        }
+    })
+    # MUST call set_sandbox_mode to route to testnet.binance.vision
+    exchange.set_sandbox_mode(True)
+    return exchange
 
 
 class BinanceMarketData(MarketDataProvider):
