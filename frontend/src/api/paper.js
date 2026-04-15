@@ -23,11 +23,11 @@ export function usePaperLedger() {
   })
 }
 
-export function usePaperPortfolio() {
+export function usePaperPortfolio(tf = '1D') {
   return useQuery({
-    queryKey: ['paper', 'portfolio'],
+    queryKey: ['paper', 'portfolio', tf],
     queryFn: async () => {
-      const { data } = await api.get('/paper/portfolio')
+      const { data } = await api.get(`/paper/portfolio?tf=${tf}`)
       return data
     },
     refetchInterval: 60000,
@@ -39,6 +39,19 @@ export function useSubmitPaperKeys() {
   return useMutation({
     mutationFn: async ({ api_key, secret }) => {
       const { data } = await api.post('/paper/keys', { api_key, secret })
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['paper'] })
+    },
+  })
+}
+
+export function useRevokePaperKeys() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async () => {
+      const { data } = await api.delete('/paper/keys')
       return data
     },
     onSuccess: () => {

@@ -2,7 +2,9 @@ import {
   Bot, Activity, TrendingUp, DollarSign,
   Plus, Sparkles, ArrowUpRight, ArrowDownRight,
 } from 'lucide-react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { usePaperPortfolio } from '../api/paper'
 import MetricCard from '../components/MetricCard'
 import PortfolioPerformanceCard from '../components/PortfolioPerformanceCard'
 
@@ -22,6 +24,48 @@ const MARKET_TICKERS = [
 
 export default function DashboardPage() {
   const navigate = useNavigate()
+  
+  const [activeTimeframe, setActiveTimeframe] = useState('1D')
+  const [mode, setMode] = useState('PAPER')
+
+  // Live mock until live backend is built
+  const getLiveMockData = (tf) => {
+    const base = 150000;
+    if (tf === '1H') return [
+      { name: '09:00', equity: base + 100 }, { name: '09:10', equity: base + 250 }, 
+      { name: '09:20', equity: base + 150 }, { name: '09:30', equity: base + 400 },
+      { name: '09:40', equity: base + 300 }, { name: '09:50', equity: base + 600 }
+    ];
+    if (tf === '4H') return [
+      { name: '08:00', equity: base - 500 }, { name: '08:30', equity: base - 200 },
+      { name: '09:00', equity: base + 100 }, { name: '09:30', equity: base + 800 },
+      { name: '10:00', equity: base + 600 }, { name: '10:30', equity: base + 1200 },
+      { name: '11:00', equity: base + 900 }, { name: '11:30', equity: base + 1500 }
+    ];
+    if (tf === '1W') return [
+      { name: 'Mon', equity: base - 2000 }, { name: 'Tue', equity: base - 500 },
+      { name: 'Wed', equity: base + 1000 }, { name: 'Thu', equity: base + 3000 },
+      { name: 'Fri', equity: base + 2500 }, { name: 'Sat', equity: base + 4000 },
+      { name: 'Sun', equity: base + 4500 }
+    ];
+    // 1D default
+    return [
+      { name: '00:00', equity: base + 4500 }, { name: '04:00', equity: base + 5500 },
+      { name: '08:00', equity: base + 8500 }, { name: '12:00', equity: base + 10000 },
+      { name: '16:00', equity: base + 9000 }, { name: '20:00', equity: base + 12000 }
+    ];
+  };
+
+  const { data: paperData = [], isError: paperError } = usePaperPortfolio(activeTimeframe);
+  const displayData = mode === 'PAPER' ? paperData : getLiveMockData(activeTimeframe);
+
+  const currentBalance = displayData?.length > 0 ? displayData[displayData.length - 1].equity : 0.0;
+  const rawPnl = displayData?.length > 0 && displayData[0].equity > 0 
+    ? (currentBalance - displayData[0].equity) 
+    : 0.0;
+  const pnlPercent = displayData?.length > 0 && displayData[0].equity > 0
+    ? ((rawPnl / displayData[0].equity) * 100).toFixed(2)
+    : '0.00';
 
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px 28px' }}>
@@ -107,7 +151,18 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Portfolio Chart ── */}
-      <PortfolioPerformanceCard />
+      <PortfolioPerformanceCard 
+        data={displayData}
+        title="Portfolio Performance"
+        currentBalance={currentBalance}
+        pnlPercent={pnlPercent}
+        rawPnl={rawPnl}
+        activeTimeframe={activeTimeframe}
+        setActiveTimeframe={setActiveTimeframe}
+        isError={mode === 'PAPER' ? paperError : false}
+        mode={mode}
+        onModeChange={setMode}
+      />
 
       {/* ── Bottom Section ── */}
       <div

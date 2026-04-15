@@ -9,6 +9,8 @@ import {
   Activity,
   History,
   DollarSign,
+  Key,
+  X,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -20,10 +22,11 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 
-import { usePaperBots, usePaperLedger, usePaperPortfolio } from '../api/paper';
+import { usePaperBots, usePaperLedger, usePaperPortfolio, useSubmitPaperKeys, useRevokePaperKeys } from '../api/paper';
 import { useStrategies } from '../api/strategies';
 import { useCreateBot } from '../api/bots';
 import toast from 'react-hot-toast';
+import PortfolioPerformanceCard from '../components/PortfolioPerformanceCard';
 
 const CHART_DATA = [
   { time: '00:00', price: 64100 },
@@ -43,10 +46,19 @@ export default function PaperTradingPage() {
 
   const { data: activeBots = [], isLoading: loadingBots } = usePaperBots();
   const { data: ledgerTrades = [], isLoading: loadingLedger } = usePaperLedger();
-  const { data: portfolioData = [], isLoading: loadingPortfolio, isError: portfolioError } = usePaperPortfolio();
+  const { data: portfolioData = [], isLoading: loadingPortfolio, isError: portfolioError } = usePaperPortfolio(activeTimeframe);
   
   const { data: strategiesData = [] } = useStrategies();
   const { mutate: createBot, isPending: isDeploying } = useCreateBot();
+  const { mutate: submitKeys, isPending: isSubmittingKeys } = useSubmitPaperKeys();
+  const { mutate: revokeKeys, isPending: isRevokingKeys } = useRevokePaperKeys();
+
+  const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [apiSecretInput, setApiSecretInput] = useState('');
+
+  // We infer lack of keys if portfolio returns an error (404)
+  const hasKeys = !portfolioError && portfolioData && !loadingPortfolio;
 
   // Set default strategy when strategies load
   React.useEffect(() => {
@@ -110,6 +122,32 @@ export default function PaperTradingPage() {
     });
   };
 
+  const handleKeySubmit = (e) => {
+    e.preventDefault();
+    if (!apiKeyInput || !apiSecretInput) return toast.error('Please fill in both fields');
+    submitKeys({ api_key: apiKeyInput, secret: apiSecretInput }, {
+      onSuccess: () => {
+        toast.success('Testnet Keys saved successfully!');
+        setIsKeyModalOpen(false);
+        setApiKeyInput('');
+        setApiSecretInput('');
+      },
+      onError: (err) => {
+        toast.error(err.response?.data?.detail || 'Failed to verify keys');
+      }
+    });
+  };
+
+  const handleKeyRevoke = () => {
+    if (window.confirm("Are you sure you want to disconnect your Binance Testnet keys?")) {
+      revokeKeys(undefined, {
+        onSuccess: () => {
+          toast.success('Keys revoked successfully');
+        }
+      });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#0f1729] text-white font-sans selection:bg-blue-500/30">
       <div className="max-w-[1400px] mx-auto px-[24px] py-[32px] md:px-[32px] md:py-[40px] flex flex-col gap-[32px]">
@@ -133,10 +171,31 @@ export default function PaperTradingPage() {
             </p>
           </div>
 
-          <button className="flex items-center justify-center gap-[8px] px-[16px] py-[10px] rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all font-medium text-[14px] text-slate-300 shrink-0">
-            <RotateCcw className="w-[16px] h-[16px] text-slate-400" />
-            Reset Virtual Balance
-          </button>
+          <div className="flex flex-wrap items-center gap-[12px] shrink-0">
+            {hasKeys ? (
+              <button 
+                onClick={handleKeyRevoke}
+                disabled={isRevokingKeys}
+                className="flex items-center justify-center gap-[8px] px-[16px] py-[10px] rounded-xl border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 transition-all font-medium text-[14px] text-rose-400"
+              >
+                <Key className="w-[16px] h-[16px] text-rose-400" />
+                {isRevokingKeys ? 'Disconnecting...' : 'Disconnect Keys'}
+              </button>
+            ) : (
+               <button 
+                onClick={() => setIsKeyModalOpen(true)}
+                className="flex items-center justify-center gap-[8px] px-[16px] py-[10px] rounded-xl border border-blue-500/20 bg-blue-500/10 hover:bg-blue-500/20 transition-all font-medium text-[14px] text-blue-400"
+              >
+                <Key className="w-[16px] h-[16px] text-blue-400" />
+                Connect Keys
+              </button>
+            )}
+
+            <button className="flex items-center justify-center gap-[8px] px-[16px] py-[10px] rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all font-medium text-[14px] text-slate-300">
+              <RotateCcw className="w-[16px] h-[16px] text-slate-400" />
+              Reset Virtual Balance
+            </button>
+          </div>
         </div>
 
         {/* KPI METRICS */}
@@ -233,78 +292,18 @@ export default function PaperTradingPage() {
           <div className="lg:col-span-2 flex flex-col gap-[24px]">
             
             {/* Chart Container */}
-            <div className="bg-[#131b2f] border border-white/5 rounded-2xl p-[24px] flex flex-col gap-[24px]">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-[16px]">
-                <h2 className="text-[18px] font-bold text-white flex items-center gap-[12px] leading-none">
-                  <Activity className="w-[20px] h-[20px] text-blue-400" />
-                  Simulated Strategy Performance
-                </h2>
-                <div className="flex items-center gap-[4px] bg-[#0a0f1c] p-[4px] rounded-lg border border-white/5 w-fit">
-                  {['1H', '4H', '1D', '1W'].map((tf) => (
-                    <button
-                      key={tf}
-                      onClick={() => setActiveTimeframe(tf)}
-                      className={`px-[12px] py-[6px] rounded-md text-[12px] font-bold transition-all ${
-                        activeTimeframe === tf
-                          ? 'bg-blue-600 text-white'
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      {tf}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="h-[300px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={portfolioData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                    <XAxis
-                      dataKey="name"
-                      stroke="#475569"
-                      fontSize={11}
-                      tickMargin={12}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      domain={['dataMin', 'dataMax']}
-                      stroke="#475569"
-                      fontSize={11}
-                      tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`}
-                      axisLine={false}
-                      tickLine={false}
-                      tickMargin={10}
-                      width={80}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: '#0f1729',
-                        borderColor: '#1e293b',
-                        borderRadius: '8px',
-                        fontSize: '12px',
-                      }}
-                      itemStyle={{ color: '#3b82f6', fontWeight: 'bold' }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="equity"
-                      stroke="#3b82f6"
-                      strokeWidth={2}
-                      fillOpacity={1}
-                      fill="url(#colorPrice)"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
+            <PortfolioPerformanceCard
+              data={portfolioData}
+              title="Simulated Strategy Performance"
+              currentBalance={currentBalance}
+              pnlPercent={pnlPercent}
+              rawPnl={rawPnl}
+              activeTimeframe={activeTimeframe}
+              setActiveTimeframe={setActiveTimeframe}
+              isError={portfolioError}
+              mode="PAPER"
+              compact={true}
+            />
 
             {/* Deploy Bot Form */}
             <div className="bg-[#131b2f] border border-white/5 rounded-2xl p-[24px] flex flex-col gap-[32px]">
@@ -479,6 +478,76 @@ export default function PaperTradingPage() {
         </div>
 
       </div>
+
+      {/* MODAL OVERLAY */}
+      {isKeyModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-[24px]">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setIsKeyModalOpen(false)}
+          />
+
+          {/* Modal Content */}
+          <div className="relative bg-[#0f1729] border border-white/10 rounded-2xl p-[32px] w-full max-w-[480px] flex flex-col gap-[24px] shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h2 className="text-[20px] font-bold text-white flex items-center gap-[12px]">
+                <Key className="w-[20px] h-[20px] text-blue-400" />
+                Connect Testnet Keys
+              </h2>
+              <button 
+                onClick={() => setIsKeyModalOpen(false)}
+                className="w-[32px] h-[32px] rounded-full hover:bg-white/5 flex items-center justify-center transition-colors"
+              >
+                <X className="w-[16px] h-[16px] text-slate-400" />
+              </button>
+            </div>
+
+            <p className="text-[14px] text-slate-400">
+              Paste your Binance Spot Testnet API credentials below. They are encrypted symmetrically at rest on our secure servers.
+            </p>
+
+            <form onSubmit={handleKeySubmit} className="flex flex-col gap-[20px]">
+              <div className="flex flex-col gap-[12px]">
+                <label className="text-[12px] font-bold text-slate-500 uppercase tracking-widest leading-none">
+                  API Key
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={apiKeyInput}
+                  onChange={(e) => setApiKeyInput(e.target.value)}
+                  placeholder="Paste testnet API key..."
+                  className="w-full h-[52px] bg-[#0a0f1c] border border-white/5 rounded-xl px-[16px] text-white text-[14px] focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div className="flex flex-col gap-[12px]">
+                <label className="text-[12px] font-bold text-slate-500 uppercase tracking-widest leading-none">
+                  Secret Key
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={apiSecretInput}
+                  onChange={(e) => setApiSecretInput(e.target.value)}
+                  placeholder="Paste testnet secret key..."
+                  className="w-full h-[52px] bg-[#0a0f1c] border border-white/5 rounded-xl px-[16px] text-white text-[14px] focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <button 
+                type="submit" 
+                disabled={isSubmittingKeys}
+                className="w-full h-[56px] rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-[14px] transition-colors mt-[8px]"
+              >
+                {isSubmittingKeys ? 'Verifying & Saving...' : 'Securely Save Keys'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

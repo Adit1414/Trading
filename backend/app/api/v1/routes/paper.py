@@ -137,8 +137,24 @@ async def submit_paper_keys(body: KeySubmit, user_id: str = Depends(get_current_
         await session.commit()
     return {"message": "Keys saved securely"}
 
+@router.delete("/keys", status_code=status.HTTP_200_OK)
+async def revoke_paper_keys(user_id: str = Depends(get_current_user)):
+    """Delete the user's paper trading API keys"""
+    async with get_db() as session:
+        result = await session.execute(select(ApiKeyModel).where(ApiKeyModel.user_id == user_id))
+        existing_key = result.scalar_one_or_none()
+        
+        if existing_key:
+            await session.delete(existing_key)
+            await session.commit()
+            
+    return {"message": "Keys revoked successfully"}
+
 @router.get("/portfolio")
-async def get_paper_portfolio(user_id: str = Depends(get_current_user)):
+async def get_paper_portfolio(
+    tf: str = "1D",
+    user_id: str = Depends(get_current_user)
+):
     """Query CCXT testnet for fake account balance and return AreaChart format"""
     async with get_db() as session:
         result = await session.execute(select(ApiKeyModel).where(ApiKeyModel.user_id == user_id))
@@ -162,15 +178,36 @@ async def get_paper_portfolio(user_id: str = Depends(get_current_user)):
     finally:
         await exchange.close()
 
-    # Simulate historical points for recharts
     now = datetime.datetime.now()
     data = []
-    for i in range(7, 0, -1):
-        dt = now - datetime.timedelta(days=i)
+    
+    if tf == "1H":
+        # Simulate last 60 minutes, ticks every 10 min
+        steps = 6
+        delta = datetime.timedelta(minutes=10)
+        time_fmt = "%H:%M"
+    elif tf == "4H":
+        # Simulate last 4 hours, ticks every 30 min
+        steps = 8
+        delta = datetime.timedelta(minutes=30)
+        time_fmt = "%H:%M"
+    elif tf == "1W":
+        # Simulate last 7 days, ticks every day
+        steps = 7
+        delta = datetime.timedelta(days=1)
+        time_fmt = "%b %d"
+    else:  # "1D" default
+        # Simulate last 24 hours, ticks every 4 hours
+        steps = 6
+        delta = datetime.timedelta(hours=4)
+        time_fmt = "%H:%M"
+
+    for i in range(steps, 0, -1):
+        dt = now - (delta * i)
         offset = random.uniform(-0.02, 0.02) * tot_usdt
         val = max(tot_usdt + offset, 0)
-        data.append({"name": dt.strftime("%b %d"), "equity": round(val, 2)})
+        data.append({"name": dt.strftime(time_fmt), "equity": round(val, 2)})
     
-    data.append({"name": now.strftime("%b %d"), "equity": round(tot_usdt, 2)})
+    data.append({"name": now.strftime(time_fmt), "equity": round(tot_usdt, 2)})
 
     return data
