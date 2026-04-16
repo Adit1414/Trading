@@ -12,6 +12,8 @@ import BacktestDetailPage from './pages/BacktestDetailPage'
 import BotDashboardPage from './pages/BotDashboardPage'
 import CreateBotPage from './pages/CreateBotPage'
 import StrategiesHubPage from './pages/StrategiesHubPage'
+import SettingsPage from './pages/SettingsPage'
+import LiveTradingPage from './pages/LiveTradingPage'
 import PaperTradingPage from './pages/PaperTradingPage'
 
 const queryClient = new QueryClient({
@@ -54,6 +56,8 @@ export default function App() {
               <Route path="/bots/dashboard" element={<BotDashboardPage />} />
               <Route path="/bots/create" element={<CreateBotPage />} />
               <Route path="/strategies" element={<StrategiesHubPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/live-trading" element={<LiveTradingPage />} />
               <Route path="/paper-trading" element={<PaperTradingPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
