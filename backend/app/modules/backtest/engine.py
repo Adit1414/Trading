@@ -251,9 +251,21 @@ def _run_backtest_sync(df: pd.DataFrame, strategy_class, req: BacktestRunRequest
     # Try generating chart, fall back string if failed
     chart_html = ""
     try:
-        # Generate bokeh interactive chart 
-        # this will write full HTML to the file path specified.
-        bt.plot(filename=chart_path, open_browser=False, resample=False)
+        # Temp patch for pandas >= 2.2 'M' offset deprecation in backtesting.py
+        _orig_df_resample = pd.DataFrame.resample
+        def _patched_df_resample(self, rule, *args, **kwargs):
+            if rule == 'M':
+                rule = 'ME'
+            return _orig_df_resample(self, rule, *args, **kwargs)
+        pd.DataFrame.resample = _patched_df_resample
+        
+        try:
+            # Generate bokeh interactive chart
+            # this will write full HTML to the file path specified.
+            bt.plot(filename=chart_path, open_browser=False, resample=False)
+        finally:
+            pd.DataFrame.resample = _orig_df_resample
+            
         with open(chart_path, "r", encoding="utf-8") as f:
             chart_html = f.read()
     except Exception as e:
