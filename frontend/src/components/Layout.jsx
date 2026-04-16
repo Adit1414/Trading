@@ -3,24 +3,26 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
 import {
   LayoutDashboard, TrendingUp, Bot, Sparkles,
-  Settings, LogOut, Menu, X, ChevronRight,
+  Settings, LogOut, Menu, X, ChevronRight, Zap,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const NAV_MENU = [
-  { name: 'Dashboard',    path: '/dashboard',  icon: LayoutDashboard },
-  { name: 'Backtest',     path: '/backtests',  icon: TrendingUp },
-  { name: 'Trading Bots', path: '/bots',        icon: Bot },
-  { name: 'Strategies',   path: '/strategies', icon: Sparkles },
-  { name: 'Settings',     path: '/settings',   icon: Settings },
+  { name: 'Dashboard',    path: '/dashboard',     icon: LayoutDashboard },
+  { name: 'Backtest',     path: '/backtests',     icon: TrendingUp },
+  { name: 'Trading Bots', path: '/bots',           icon: Bot },
+  { name: 'Strategies',   path: '/strategies',    icon: Sparkles },
+  { name: 'Live Trading', path: '/live-trading',  icon: Zap },
+  { name: 'Settings',     path: '/settings',      icon: Settings },
 ]
 
 const PAGE_TITLES = {
-  '/dashboard':  'Dashboard',
-  '/backtests':  'Backtests',
-  '/bots':       'Trading Bots',
-  '/strategies': 'Strategies',
-  '/settings':   'Settings',
+  '/dashboard':    'Dashboard',
+  '/backtests':    'Backtests',
+  '/bots':         'Trading Bots',
+  '/strategies':   'Strategies',
+  '/live-trading': 'Live Trading',
+  '/settings':     'Settings',
 }
 
 export default function Layout() {

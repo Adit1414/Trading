@@ -1,6 +1,6 @@
 import {
   Bot, Activity, TrendingUp, DollarSign,
-  Plus, Sparkles, ArrowUpRight, ArrowDownRight,
+  Plus, Sparkles, ArrowUpRight, ArrowDownRight, Zap,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import MetricCard from '../components/MetricCard'
@@ -59,18 +59,35 @@ export default function DashboardPage() {
             onClick={() => navigate('/bots/create')}
             style={{
               display: 'flex', alignItems: 'center', gap: '7px',
-              padding: '9px 18px', borderRadius: '12px',
-              background: 'linear-gradient(135deg, #818cf8 0%, #6366f1 100%)',
-              border: 'none',
-              color: 'white', fontSize: '13px', fontWeight: 600,
+              padding: '9px 16px', borderRadius: '12px',
+              background: 'rgba(129,140,248,0.1)',
+              border: '1px solid rgba(129,140,248,0.2)',
+              color: '#a5b4fc', fontSize: '13px', fontWeight: 600,
               cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap',
-              boxShadow: '0 4px 18px rgba(99,102,241,0.4)',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(129,140,248,0.18)'; e.currentTarget.style.borderColor = 'rgba(129,140,248,0.35)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(129,140,248,0.1)'; e.currentTarget.style.borderColor = 'rgba(129,140,248,0.2)' }}
+          >
+            <Plus size={15} strokeWidth={2.5} />
+            Create Bot
+          </button>
+          <button
+            id="live-trading-btn"
+            onClick={() => navigate('/live-trading')}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '7px',
+              padding: '9px 18px', borderRadius: '12px',
+              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+              border: 'none',
+              color: 'white', fontSize: '13px', fontWeight: 700,
+              cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap',
+              boxShadow: '0 4px 18px rgba(16,185,129,0.4)',
             }}
             onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.88' }}
             onMouseLeave={(e) => { e.currentTarget.style.opacity = '1' }}
           >
-            <Plus size={15} strokeWidth={2.5} />
-            Create Bot
+            <Zap size={15} strokeWidth={2.5} />
+            Live Trading
           </button>
         </div>
       </div>

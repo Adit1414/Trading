@@ -13,6 +13,7 @@ import BotDashboardPage from './pages/BotDashboardPage'
 import CreateBotPage from './pages/CreateBotPage'
 import StrategiesHubPage from './pages/StrategiesHubPage'
 import SettingsPage from './pages/SettingsPage'
+import LiveTradingPage from './pages/LiveTradingPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -55,6 +56,7 @@ export default function App() {
               <Route path="/bots/create" element={<CreateBotPage />} />
               <Route path="/strategies" element={<StrategiesHubPage />} />
               <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/live-trading" element={<LiveTradingPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
