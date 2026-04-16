@@ -25,9 +25,8 @@ from fastapi.responses import FileResponse
 from app.core.auth import get_current_user
 
 from app.core.rate_limiter import BACKTEST_LIMIT, limiter
-from app.modules.backtest.chart import get_chart_path
+from app.modules.backtest.engine import BacktestError, run_backtest, get_chart_path
 from app.modules.backtest.data_cache import cache_stats
-from app.modules.backtest.engine import BacktestError, run_backtest
 from app.modules.backtest.strategies import list_strategies
 from app.schemas.backtest import BacktestRunRequest, BacktestRunResponse
 

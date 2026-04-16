@@ -155,7 +155,7 @@ export default function BacktestList({ searchQuery }) {
                 padding: '14px', borderRadius: '12px',
                 background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.04)',
               }}>
-                <div>
+                <div style={{ minWidth: 0, overflow: 'hidden' }}>
                   <p style={{ fontSize: '10px', fontWeight: 700, color: '#334155', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '4px' }}>Strategy</p>
                   <p style={{ fontSize: '13px', fontWeight: 600, color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={stratLabel}>
                     {stratLabel}
