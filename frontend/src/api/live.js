@@ -63,7 +63,7 @@ export async function panicCancelOrder(orderId) {
  * where `time` is a Unix timestamp in SECONDS.
  */
 export async function fetchOhlcv(symbol = 'BTCUSDT', interval = '1m', limit = 100) {
-  const url = `https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(symbol)}&interval=${interval}&limit=${limit}`
+  const url = `https://data-api.binance.vision/api/v3/klines?symbol=${encodeURIComponent(symbol)}&interval=${interval}&limit=${limit}`
   const res = await fetch(url)
   if (!res.ok) throw new Error(`Binance klines fetch failed: ${res.status}`)
   const raw = await res.json()

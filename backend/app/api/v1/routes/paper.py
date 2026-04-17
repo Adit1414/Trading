@@ -4,8 +4,11 @@ app/api/v1/routes/paper.py
 Paper Trading endpoints.
 """
 import datetime
+import logging
 import random
 from typing import Any, Dict, List
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -155,7 +158,12 @@ async def get_paper_portfolio(
     tf: str = "1D",
     user_id: str = Depends(get_current_user)
 ):
-    """Query CCXT testnet for fake account balance and return AreaChart format"""
+    """
+    Return portfolio history snapshots for the chart.
+    Attempts a live CCXT testnet balance fetch to append the latest real-time
+    data point. If the testnet is unavailable, falls back gracefully to
+    DB-only snapshot data so the endpoint never returns 500.
+    """
     async with get_db() as session:
         result = await session.execute(select(ApiKeyModel).where(ApiKeyModel.user_id == user_id))
         api_key = result.scalar_one_or_none()
@@ -163,41 +171,41 @@ async def get_paper_portfolio(
     if not api_key:
         raise HTTPException(status_code=404, detail="No paper trading keys found")
 
+    # ── Attempt live balance (non-fatal) ─────────────────────────────────────
+    tot_usdt: float | None = None
     dec_key = decrypt_api_key(api_key.binance_testnet_api_key)
     dec_secret = decrypt_api_key(api_key.binance_testnet_secret)
-
     exchange = get_binance_testnet_client(dec_key, dec_secret)
     try:
         balance = await exchange.fetch_balance()
-        # Fallback to 10000.0 if not trading yet or total is missing on testnet
-        tot_usdt = balance.get('USDT', {}).get('total', 0.0) 
-        if not tot_usdt:
-            tot_usdt = 0.0
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"CCXT Error: {str(e)}")
+        live_val = balance.get("USDT", {}).get("total", 0.0)
+        tot_usdt = float(live_val) if live_val else 0.0
+    except Exception as exc:
+        # Testnet can be intermittently down — log and continue with DB data
+        logger.warning("[Paper] Live testnet fetch failed (non-fatal): %s", exc)
+        tot_usdt = None
     finally:
-        await exchange.close()
+        try:
+            await exchange.close()
+        except Exception:
+            pass
 
+    # ── Time-window selection ─────────────────────────────────────────────────
     now = datetime.datetime.now(datetime.timezone.utc)
-    data = []
-    
     if tf == "1H":
-        # Get snapshots from the last 1 hour
         start_time = now - datetime.timedelta(hours=1)
         time_fmt = "%H:%M"
     elif tf == "4H":
-        # Get snapshots from the last 4 hours
         start_time = now - datetime.timedelta(hours=4)
         time_fmt = "%H:%M"
     elif tf == "1W":
-        # Get snapshots from the last 7 days
         start_time = now - datetime.timedelta(days=7)
         time_fmt = "%b %d"
     else:  # "1D" default
-        # Get snapshots from the last 24 hours
         start_time = now - datetime.timedelta(hours=24)
         time_fmt = "%H:%M"
 
+    # ── Fetch history from DB ─────────────────────────────────────────────────
     async with get_db() as session:
         result = await session.execute(
             select(PortfolioHistoryModel)
@@ -208,15 +216,18 @@ async def get_paper_portfolio(
         )
         history = result.scalars().all()
 
-    for record in history:
-        # Convert timestamp to local or display format
-        data.append({
-            "name": record.timestamp.strftime(time_fmt),
-            "equity": round(float(record.total_balance), 2)
-        })
+    data = [
+        {"name": record.timestamp.strftime(time_fmt), "equity": round(float(record.total_balance), 2)}
+        for record in history
+    ]
 
-    # Always append the absolute latest real-time live value from CCXT
-    # If there wasn't any history, we at least show this single point.
-    data.append({"name": now.strftime(time_fmt), "equity": round(tot_usdt, 2)})
+    # Append real-time point only when the live fetch succeeded
+    if tot_usdt is not None:
+        data.append({"name": now.strftime(time_fmt), "equity": round(tot_usdt, 2)})
+
+    # If we have no data at all, return a single zero-equity placeholder so
+    # the chart component never receives an empty array.
+    if not data:
+        data.append({"name": now.strftime(time_fmt), "equity": 0.0})
 
     return data

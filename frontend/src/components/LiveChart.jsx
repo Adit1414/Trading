@@ -1,5 +1,5 @@
 import { useEffect, useImperativeHandle, useRef, forwardRef } from 'react'
-import { createChart, CrosshairMode, LineStyle, ColorType } from 'lightweight-charts'
+import { createChart, CrosshairMode, LineStyle, ColorType, CandlestickSeries } from 'lightweight-charts'
 
 /**
  * LiveChart — a dark-themed candlestick chart powered by TradingView's
@@ -81,7 +81,7 @@ const LiveChart = forwardRef(function LiveChart({ initialData = [], symbol = 'BT
       chartRef.current = chart
       chartInstance = chart
 
-      const series = chart.addCandlestickSeries({
+      const series = chart.addSeries(CandlestickSeries, {
         upColor: '#10b981',
         downColor: '#f43f5e',
         borderUpColor: '#10b981',

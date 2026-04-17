@@ -66,11 +66,11 @@ class LiveWebSocketManager:
         if self._tasks:
             return
         streams = {
-            "ticker": "wss://stream.binance.com:9443/ws/!ticker@arr",
-            "book_depth": "wss://stream.binance.com:9443/ws/btcusdt@depth20@100ms",
-            "kline_1m": "wss://stream.binance.com:9443/ws/btcusdt@kline_1m",
-            "kline_5m": "wss://stream.binance.com:9443/ws/btcusdt@kline_5m",
-            "kline_1h": "wss://stream.binance.com:9443/ws/btcusdt@kline_1h",
+            "ticker": "wss://data-stream.binance.vision:9443/ws/!ticker@arr",
+            "book_depth": "wss://data-stream.binance.vision:9443/ws/btcusdt@depth20@100ms",
+            "kline_1m": "wss://data-stream.binance.vision:9443/ws/btcusdt@kline_1m",
+            "kline_5m": "wss://data-stream.binance.vision:9443/ws/btcusdt@kline_5m",
+            "kline_1h": "wss://data-stream.binance.vision:9443/ws/btcusdt@kline_1h",
         }
         for name, stream_url in streams.items():
             self._tasks[name] = asyncio.create_task(self._pump_binance_stream(name, stream_url))
