@@ -108,8 +108,12 @@ async def _bot_trading_loop(bot_id: str, user_id: str) -> None:
                 # 2. Fetch the last 50 candles (1m timeframe)
                 exchange = get_binance_testnet_client("", "") # Anonymous client just for public market data
                 try:
+                    normalized_symbol = bot.symbol.upper()
+                    if "/" not in normalized_symbol and len(normalized_symbol) > 3:
+                        if normalized_symbol.endswith("USDT"):
+                            normalized_symbol = f"{normalized_symbol[:-4]}/USDT"
                     # fetch_ohlcv returns: [timestamp, open, high, low, close, volume]
-                    candles = await exchange.fetch_ohlcv(bot.symbol, timeframe='1m', limit=50)
+                    candles = await exchange.fetch_ohlcv(normalized_symbol, timeframe='1m', limit=50)
                 finally:
                     await exchange.close()
 
