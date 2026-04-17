@@ -42,10 +42,20 @@ export const useAuthStore = create((set, get) => ({
     return data
   },
 
-  signup: async (email, password) => {
+  signup: async (email, password, metadata = {}) => {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        data: {
+          full_name: metadata.full_name ?? '',
+          dob: metadata.dob ?? '',
+          contact_info: metadata.contact_info ?? '',
+          phone: metadata.phone ?? metadata.contact_info ?? '',
+          timezone: metadata.timezone ?? '',
+          bio: metadata.bio ?? '',
+        },
+      },
     })
     if (error) {
       console.error('[Auth] Signup failed:', error.message)

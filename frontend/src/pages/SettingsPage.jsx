@@ -1,16 +1,37 @@
+<<<<<<< HEAD
 import { useEffect, useState, useRef } from 'react'
+=======
+import { useEffect, useState } from 'react'
+>>>>>>> origin/papertrading-integration
 import {
-  User, Lock, Bell, BarChart2, Palette, Trash2,
+  User, Lock, Bell, BarChart2, Trash2,
   ShieldCheck, Eye, EyeOff, Camera, Check, AlertTriangle,
-  Mail, Phone, CreditCard, Globe, Moon, Sun, Monitor,
+  Mail, Phone, Globe, Monitor,
   Volume2, VolumeX, Smartphone, TrendingUp, DollarSign,
-  ChevronRight, LogOut, RefreshCw, Download, Key,
+  LogOut, RefreshCw, Download, Key,
 } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import toast from 'react-hot-toast'
+<<<<<<< HEAD
 import { getBinanceSettings, saveBinanceSettings } from '../api/settings'
+=======
+import {
+  deleteUserAccount,
+  exportUserData,
+  getActiveSessions,
+  getNotificationPreferences,
+  getProfile,
+  getTradingPreferences,
+  revokeAllSessions,
+  setupTwoFA,
+  updateAvatar,
+  updateNotificationPreferences,
+  updateProfile,
+  updateTradingPreferences,
+} from '../api/settings'
+>>>>>>> origin/papertrading-integration
 
 /* ── Section IDs ────────────────────────────────────────────────── */
 const SECTIONS = [
@@ -18,7 +39,6 @@ const SECTIONS = [
   { id: 'security',      label: 'Security',         icon: Lock },
   { id: 'notifications', label: 'Notifications',    icon: Bell },
   { id: 'trading',       label: 'Trading',          icon: BarChart2 },
-  { id: 'appearance',    label: 'Appearance',       icon: Palette },
   { id: 'danger',        label: 'Danger Zone',      icon: Trash2 },
 ]
 
@@ -239,12 +259,15 @@ export default function SettingsPage() {
     bio:      user?.user_metadata?.bio ?? '',
   })
   const [profileLoading, setProfileLoading] = useState(false)
+  const [avatarLoading, setAvatarLoading] = useState(false)
 
   /* ── Security ── */
   const [passwords, setPasswords] = useState({ current: '', newPass: '', confirm: '' })
   const [showPass, setShowPass] = useState({ current: false, newPass: false, confirm: false })
   const [twoFA, setTwoFA] = useState(false)
   const [secLoading, setSecLoading] = useState(false)
+  const [sessions, setSessions] = useState([])
+  const [sessionsLoading, setSessionsLoading] = useState(false)
 
   /* ── Notifications ── */
   const [notif, setNotif] = useState({
@@ -255,6 +278,7 @@ export default function SettingsPage() {
     systemEmail: true,     systemPush: true,
     soundAlerts: true,
   })
+  const [notifLoading, setNotifLoading] = useState(false)
 
   /* ── Trading Preferences ── */
   const [trading, setTrading] = useState({
@@ -279,12 +303,6 @@ export default function SettingsPage() {
     apiKey: '',
     secret: '',
   })
-
-  /* ── Appearance ── */
-  const [theme, setTheme] = useState('dark')
-  const [accentColor, setAccentColor] = useState('#818cf8')
-  const [compactMode, setCompactMode] = useState(false)
-  const [animationsEnabled, setAnimationsEnabled] = useState(true)
 
   /* ── Active section (sidebar highlight) ── */
   const [activeSection, setActiveSection] = useState('profile')
@@ -318,15 +336,12 @@ export default function SettingsPage() {
   const saveProfile = async () => {
     setProfileLoading(true)
     try {
-      const { error } = await supabase.auth.updateUser({
-        data: {
-          full_name: profile.fullName,
-          phone:     profile.phone,
-          timezone:  profile.timezone,
-          bio:       profile.bio,
-        },
+      await updateProfile({
+        full_name: profile.fullName,
+        phone: profile.phone,
+        timezone: profile.timezone,
+        bio: profile.bio,
       })
-      if (error) throw error
       toast.success('Profile updated successfully.')
     } catch (err) {
       toast.error(err.message || 'Failed to update profile.')
@@ -359,9 +374,14 @@ export default function SettingsPage() {
 
   const saveTradingPrefs = async () => {
     setTradingLoading(true)
-    await new Promise((r) => setTimeout(r, 700))   // simulate API
-    toast.success('Trading preferences saved.')
-    setTradingLoading(false)
+    try {
+      await updateTradingPreferences(trading)
+      toast.success('Trading preferences saved.')
+    } catch (err) {
+      toast.error(err.message || 'Failed to save trading preferences.')
+    } finally {
+      setTradingLoading(false)
+    }
   }
 
   const saveBinanceKeys = async () => {
@@ -395,20 +415,117 @@ export default function SettingsPage() {
       'Are you absolutely sure? This action CANNOT be undone. All your bots, backtests and data will be permanently deleted.'
     )
     if (!confirmed) return
-    toast.error('Account deletion requires backend support. Please contact support.')
+    try {
+      await deleteUserAccount()
+      toast.success('Account deleted.')
+      await logout()
+      navigate('/login')
+    } catch (err) {
+      toast.error(err.message || 'Failed to delete account.')
+    }
   }
 
-  const handleExportData = () => {
-    const data = JSON.stringify({ user: user?.email, profile, trading }, null, 2)
-    const blob = new Blob([data], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url; a.download = 'numatix_export.json'; a.click()
-    URL.revokeObjectURL(url)
-    toast.success('Data exported.')
+  const handleExportData = async () => {
+    try {
+      const data = await exportUserData()
+      const serialized = JSON.stringify(data, null, 2)
+      const blob = new Blob([serialized], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = 'algokaisen_export.json'; a.click()
+      URL.revokeObjectURL(url)
+      toast.success('Data exported.')
+    } catch (err) {
+      toast.error(err.message || 'Failed to export data.')
+    }
   }
 
-  const ACCENT_PRESETS = ['#818cf8', '#6366f1', '#10b981', '#f59e0b', '#f43f5e', '#06b6d4', '#a855f7']
+  const saveNotificationPrefs = async () => {
+    setNotifLoading(true)
+    try {
+      await updateNotificationPreferences(notif)
+      toast.success('Notification preferences saved.')
+    } catch (err) {
+      toast.error(err.message || 'Failed to save notification preferences.')
+    } finally {
+      setNotifLoading(false)
+    }
+  }
+
+  const loadSettings = async () => {
+    try {
+      const [profileData, notifData, tradingData, sessionsData] = await Promise.all([
+        getProfile(),
+        getNotificationPreferences(),
+        getTradingPreferences(),
+        getActiveSessions(),
+      ])
+      const metadata = user?.user_metadata || {}
+      setProfile({
+        fullName: profileData.full_name || metadata.full_name || '',
+        phone: profileData.phone || metadata.phone || metadata.contact_info || '',
+        timezone: profileData.timezone || metadata.timezone || 'UTC+05:30',
+        bio: profileData.bio || metadata.bio || '',
+      })
+      setNotif((prev) => ({ ...prev, ...notifData }))
+      setTrading((prev) => ({ ...prev, ...tradingData }))
+      setSessions(sessionsData || [])
+    } catch (err) {
+      toast.error(err.message || 'Failed to load settings.')
+    }
+  }
+
+  useEffect(() => {
+    loadSettings()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const handleAvatarChange = async () => {
+    const url = window.prompt('Enter avatar image URL')
+    if (!url) return
+    setAvatarLoading(true)
+    try {
+      await updateAvatar({ avatar_url: url })
+      await loadSettings()
+      toast.success('Avatar updated.')
+    } catch (err) {
+      toast.error(err.message || 'Failed to update avatar.')
+    } finally {
+      setAvatarLoading(false)
+    }
+  }
+
+  const handleToggle2FA = async (value) => {
+    setTwoFA(value)
+    if (!value) return
+    try {
+      const data = await setupTwoFA()
+      toast.success(`2FA secret generated: ${data.secret}`)
+    } catch (err) {
+      toast.error(err.message || 'Failed to setup 2FA.')
+      setTwoFA(false)
+    }
+  }
+
+  const handleRevokeAllSessions = async () => {
+    setSessionsLoading(true)
+    try {
+      await revokeAllSessions()
+      const fresh = await getActiveSessions()
+      setSessions(fresh || [])
+      toast.success('Other sessions revoked.')
+    } catch (err) {
+      toast.error(err.message || 'Failed to revoke sessions.')
+    } finally {
+      setSessionsLoading(false)
+    }
+  }
+
+  const handleSignOutEverywhere = async () => {
+    await handleRevokeAllSessions()
+    await logout()
+    navigate('/login')
+  }
 
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px 28px' }}>
@@ -559,6 +676,8 @@ export default function SettingsPage() {
                 </div>
                 <button
                   title="Change avatar"
+                  onClick={handleAvatarChange}
+                  disabled={avatarLoading}
                   style={{
                     position: 'absolute', bottom: 0, right: 0,
                     width: '24px', height: '24px', borderRadius: '50%',
@@ -767,7 +886,7 @@ export default function SettingsPage() {
                     </p>
                   </div>
                 </div>
-                <ToggleSwitch id="2fa-toggle" checked={twoFA} onChange={setTwoFA} />
+                <ToggleSwitch id="2fa-toggle" checked={twoFA} onChange={handleToggle2FA} />
               </div>
               {twoFA && (
                 <div
@@ -777,7 +896,7 @@ export default function SettingsPage() {
                     fontSize: '12px', color: '#6ee7b7',
                   }}
                 >
-                  2FA setup requires an authenticator app. This feature will be fully activated in the next release.
+                  2FA seed generated. Add it to your authenticator app and verify with the backend verify endpoint.
                 </div>
               )}
             </div>
@@ -787,12 +906,9 @@ export default function SettingsPage() {
               <p style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '12px' }}>
                 Active Sessions
               </p>
-              {[
-                { device: 'Chrome on Windows', location: 'Mumbai, IN', time: 'Now', current: true },
-                { device: 'Mobile App (iOS)', location: 'Mumbai, IN', time: '2 hrs ago', current: false },
-              ].map((session, idx) => (
+              {sessions.map((session, idx) => (
                 <div
-                  key={idx}
+                  key={session.id || idx}
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     padding: '12px 14px', borderRadius: '12px', marginBottom: '8px',
@@ -803,15 +919,32 @@ export default function SettingsPage() {
                     {idx === 0 ? <Monitor size={15} style={{ color: '#818cf8' }} /> : <Smartphone size={15} style={{ color: '#818cf8' }} />}
                     <div>
                       <p style={{ fontSize: '12px', fontWeight: 600, color: 'white' }}>{session.device}</p>
-                      <p style={{ fontSize: '10px', color: '#475569' }}>{session.location} · {session.time}</p>
+                      <p style={{ fontSize: '10px', color: '#475569' }}>{session.location} · {session.last_active}</p>
                     </div>
                   </div>
                   {session.current
                     ? <span style={{ fontSize: '10px', fontWeight: 700, color: '#10b981', background: 'rgba(16,185,129,0.1)', padding: '3px 8px', borderRadius: '5px' }}>Current</span>
-                    : <button style={{ fontSize: '11px', color: '#f43f5e', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Revoke</button>
+                    : <button style={{ fontSize: '11px', color: '#f43f5e', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }} onClick={handleRevokeAllSessions}>Revoke</button>
                   }
                 </div>
               ))}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+                <button
+                  onClick={handleRevokeAllSessions}
+                  disabled={sessionsLoading}
+                  style={{
+                    fontSize: '12px',
+                    color: '#f43f5e',
+                    background: 'rgba(244,63,94,0.08)',
+                    border: '1px solid rgba(244,63,94,0.2)',
+                    borderRadius: '9px',
+                    padding: '7px 12px',
+                    cursor: sessionsLoading ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  Revoke Other Sessions
+                </button>
+              </div>
             </div>
           </SectionCard>
 
@@ -854,8 +987,8 @@ export default function SettingsPage() {
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '16px' }}>
               <SaveButton
-                loading={false}
-                onClick={() => toast.success('Notification preferences saved.')}
+                loading={notifLoading}
+                onClick={saveNotificationPrefs}
                 label="Save Preferences"
               />
             </div>
@@ -994,77 +1127,7 @@ export default function SettingsPage() {
             </div>
           </SectionCard>
 
-          {/* ── 5. APPEARANCE ──────────────────────────────────────── */}
-          <SectionCard id="appearance" title="Appearance" subtitle="Customize the look and feel of your workspace" icon={Palette} color="#a855f7">
-
-            {/* Theme selector */}
-            <div style={{ paddingBottom: '20px', borderBottom: '1px solid rgba(255,255,255,0.04)', marginBottom: '4px' }}>
-              <p style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '14px' }}>
-                Theme
-              </p>
-              <div style={{ display: 'flex', gap: '12px' }}>
-                {[
-                  { value: 'dark',   icon: Moon,    label: 'Dark' },
-                  { value: 'light',  icon: Sun,     label: 'Light' },
-                  { value: 'system', icon: Monitor, label: 'System' },
-                ].map(({ value, icon: Icon, label }) => (
-                  <button
-                    key={value}
-                    id={`theme-${value}`}
-                    onClick={() => { setTheme(value); toast.success(`${label} theme selected.`, { duration: 1500 }) }}
-                    style={{
-                      flex: 1, padding: '14px 8px', borderRadius: '14px',
-                      background: theme === value ? 'rgba(168,85,247,0.1)' : 'rgba(255,255,255,0.03)',
-                      border: theme === value ? '1px solid rgba(168,85,247,0.35)' : '1px solid rgba(255,255,255,0.06)',
-                      color: theme === value ? '#c084fc' : '#64748b',
-                      cursor: 'pointer', transition: 'all 0.2s',
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px',
-                    }}
-                  >
-                    <Icon size={18} strokeWidth={2} />
-                    <span style={{ fontSize: '12px', fontWeight: 600 }}>{label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Accent Color */}
-            <FieldRow label="Accent Color" hint="Primary highlight color used throughout the UI">
-              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                {ACCENT_PRESETS.map((color) => (
-                  <button
-                    key={color}
-                    id={`accent-${color.replace('#', '')}`}
-                    onClick={() => setAccentColor(color)}
-                    style={{
-                      width: '32px', height: '32px', borderRadius: '50%',
-                      background: color, border: accentColor === color ? `3px solid white` : '3px solid transparent',
-                      cursor: 'pointer', transition: 'all 0.2s',
-                      boxShadow: accentColor === color ? `0 0 12px ${color}80` : 'none',
-                    }}
-                  />
-                ))}
-              </div>
-            </FieldRow>
-
-            <FieldRow label="Compact Mode" hint="Reduces padding for more information density">
-              <ToggleSwitch id="compact-toggle" checked={compactMode} onChange={setCompactMode} />
-            </FieldRow>
-
-            <FieldRow label="Animations" hint="Enable micro-animations and transitions">
-              <ToggleSwitch id="animations-toggle" checked={animationsEnabled} onChange={setAnimationsEnabled} />
-            </FieldRow>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '12px' }}>
-              <SaveButton
-                loading={false}
-                onClick={() => toast.success('Appearance settings saved.')}
-                label="Save Appearance"
-              />
-            </div>
-          </SectionCard>
-
-          {/* ── 6. DANGER ZONE ─────────────────────────────────────── */}
+          {/* ── 5. DANGER ZONE ─────────────────────────────────────── */}
           <SectionCard id="danger" title="Danger Zone" subtitle="Irreversible actions — proceed with care" icon={Trash2} color="#f43f5e">
 
             {/* Export */}
@@ -1117,7 +1180,7 @@ export default function SettingsPage() {
               </div>
               <button
                 id="signout-all-btn"
-                onClick={async () => { await logout(); navigate('/login') }}
+                onClick={handleSignOutEverywhere}
                 style={{
                   display: 'flex', alignItems: 'center', gap: '7px',
                   padding: '9px 16px', borderRadius: '10px',

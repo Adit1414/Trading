@@ -78,6 +78,13 @@ class UserModel(Base):
         nullable=False,
         server_default=func.now(),
     )
+    full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    timezone: Mapped[str | None] = mapped_column(String(50), nullable=True, default="UTC+05:30")
+    bio: Mapped[str | None] = mapped_column(Text, nullable=True)
+    avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    notification_preferences: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    trading_preferences: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # ── Relationships ─────────────────────────────────────────────────────────
     api_credentials: Mapped[list["ApiCredentialModel"]] = relationship(
