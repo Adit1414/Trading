@@ -22,6 +22,12 @@ class CredentialsIn(BaseModel):
     binance_secret: str = Field(..., min_length=10)
 
 
+class BinanceSettingsOut(BaseModel):
+    api_key_masked: str | None
+    has_secret: bool
+    connected: bool
+
+
 class BotSignalIn(BaseModel):
     bot_id: str
     symbol: str
@@ -30,7 +36,37 @@ class BotSignalIn(BaseModel):
     execution_mode: str
 
 
-@router.post("/user/settings/binance", status_code=status.HTTP_200_OK)
+def _mask_api_key(key: str | None) -> str | None:
+    if not key:
+        return None
+    suffix = key[-4:] if len(key) >= 4 else key
+    return f"*********{suffix}"
+
+
+@router.get("/users/settings/binance", response_model=BinanceSettingsOut)
+async def get_live_credentials_settings(user_id: str = Depends(get_current_user)):
+    async with get_db() as session:
+        if session is None:
+            raise HTTPException(status_code=503, detail="Database is not configured.")
+        settings = (await session.execute(select(UserSettingsModel).where(UserSettingsModel.user_id == user_id))).scalar_one_or_none()
+        if settings is None:
+            return BinanceSettingsOut(api_key_masked=None, has_secret=False, connected=False)
+
+        connected = bool(settings.binance_api_key and settings.binance_secret)
+        plain_api_key: str | None = None
+        if settings.binance_api_key:
+            try:
+                plain_api_key = decrypt_api_key(settings.binance_api_key)
+            except Exception:
+                plain_api_key = None
+        return BinanceSettingsOut(
+            api_key_masked=_mask_api_key(plain_api_key),
+            has_secret=bool(settings.binance_secret),
+            connected=connected,
+        )
+
+
+@router.post("/users/settings/binance", status_code=status.HTTP_200_OK)
 async def set_live_credentials(body: CredentialsIn, user_id: str = Depends(get_current_user)):
     async with get_db() as session:
         if session is None:
@@ -52,7 +88,7 @@ async def get_wallet_balances(user_id: str = Depends(get_current_user)):
         settings = (await session.execute(select(UserSettingsModel).where(UserSettingsModel.user_id == user_id))).scalar_one_or_none()
         if settings is None or not settings.binance_api_key or not settings.binance_secret:
             raise HTTPException(status_code=400, detail="Live Binance credentials are not configured.")
-        exchange = get_binance_client(decrypt_api_key(settings.binance_api_key), decrypt_api_key(settings.binance_secret), sandbox=False)
+        exchange = get_binance_client(settings.binance_api_key, settings.binance_secret, sandbox=False)
         try:
             live_balance = await exchange.fetch_balance()
         except Exception as exc:
@@ -176,13 +212,15 @@ async def panic_close_position(position_id: str, user_id: str = Depends(get_curr
                 raise HTTPException(status_code=400, detail="Live Binance credentials are not configured.")
 
             exchange = get_binance_client(
-                decrypt_api_key(settings.binance_api_key),
-                decrypt_api_key(settings.binance_secret),
+                settings.binance_api_key,
+                settings.binance_secret,
                 sandbox=False,
             )
             try:
                 close_side = "sell" if position.side.upper() == "BUY" else "buy"
-                await exchange.create_market_order(position.pair, close_side, float(position.size))
+                await exchange.load_markets()
+                precise_amount = float(exchange.amount_to_precision(position.pair, float(position.size)))
+                await exchange.create_market_order(position.pair, close_side, precise_amount)
             except Exception as exc:
                 raise HTTPException(status_code=502, detail=f"Failed to close LIVE position on Binance: {exc}") from exc
             finally:
@@ -216,8 +254,8 @@ async def panic_cancel_order(order_id: str, user_id: str = Depends(get_current_u
                 raise HTTPException(status_code=400, detail="Live Binance credentials are not configured.")
 
             exchange = get_binance_client(
-                decrypt_api_key(settings.binance_api_key),
-                decrypt_api_key(settings.binance_secret),
+                settings.binance_api_key,
+                settings.binance_secret,
                 sandbox=False,
             )
             try:

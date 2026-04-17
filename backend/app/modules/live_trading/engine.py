@@ -9,7 +9,6 @@ import ccxt.async_support as ccxt
 from sqlalchemy import and_, select
 from sqlalchemy.exc import ProgrammingError
 
-from app.core.security import decrypt_api_key
 from app.db.models import BotModel, OrderModel, PositionModel, UserSettingsModel
 from app.db.session import get_db
 from app.services.live.exchange import get_binance_client
@@ -124,12 +123,15 @@ class LiveTradingEngine:
             raise ValueError("Binance credentials are not configured.")
 
         exchange = get_binance_client(
-            decrypt_api_key(settings.binance_api_key),
-            decrypt_api_key(settings.binance_secret),
+            settings.binance_api_key,
+            settings.binance_secret,
             sandbox=False,
         )
         try:
-            response: dict[str, Any] = await exchange.create_market_order(symbol.upper(), side.lower(), quantity)
+            normalized_symbol = symbol.upper()
+            await exchange.load_markets()
+            precise_amount = float(exchange.amount_to_precision(normalized_symbol, quantity))
+            response: dict[str, Any] = await exchange.create_market_order(normalized_symbol, side.lower(), precise_amount)
         finally:
             await exchange.close()
 
@@ -209,12 +211,18 @@ class LiveTradingEngine:
                 raise ValueError("Binance credentials are not configured.")
 
             exchange = get_binance_client(
-                decrypt_api_key(settings.binance_api_key),
-                decrypt_api_key(settings.binance_secret),
+                settings.binance_api_key,
+                settings.binance_secret,
                 sandbox=False,
             )
             try:
-                response: dict[str, Any] = await exchange.create_market_order(order.symbol, order.side.lower(), float(order.quantity))
+                await exchange.load_markets()
+                precise_amount = float(exchange.amount_to_precision(order.symbol, float(order.quantity)))
+                response: dict[str, Any] = await exchange.create_market_order(
+                    order.symbol,
+                    order.side.lower(),
+                    precise_amount,
+                )
             finally:
                 await exchange.close()
 
