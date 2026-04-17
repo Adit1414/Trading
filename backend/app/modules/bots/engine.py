@@ -111,6 +111,7 @@ async def _bot_trading_loop(bot_id: str, user_id: str) -> None:
                     await exchange.close()
 
                 # 3. Process data & calculate indicators
+                # Process data & calculate indicators
                 df = pd.DataFrame(candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
                 
                 if "RSI" in bot.strategy_id:
@@ -118,25 +119,29 @@ async def _bot_trading_loop(bot_id: str, user_id: str) -> None:
                     oversold = float(params.get("oversold", 30.0))
                     overbought = float(params.get("overbought", 70.0))
                     
+                    # Extract the dynamic trade size (default to 0.01 if missing)
+                    trade_quantity = float(params.get("trade_size", 0.01))
+                    
                     df['rsi'] = calculate_rsi(df['close'], period)
                     
-                    # Need at least 2 RSI values to check for a crossover
                     if len(df['rsi'].dropna()) >= 2:
                         last_rsi = df['rsi'].iloc[-1]
                         prev_rsi = df['rsi'].iloc[-2]
 
-                        # BUY SIGNAL: RSI crosses UP over 'oversold' threshold
+                        # BUY SIGNAL
                         if current_position == "FLAT" and prev_rsi <= oversold and last_rsi > oversold:
                             logger.info(f"[{bot.symbol}] BUY SIGNAL! RSI crossed up: {prev_rsi:.2f} -> {last_rsi:.2f}")
-                            await execute_trade(bot_id, "BUY", user_id, quantity=0.01, symbol=bot.symbol)
+                            # Pass trade_quantity instead of 0.01
+                            await execute_trade(bot_id, "BUY", user_id, quantity=trade_quantity, symbol=bot.symbol)
                             
                             bot.state.current_position = "LONG"
                             await session.commit()
 
-                        # SELL SIGNAL: RSI crosses DOWN under 'overbought' threshold
+                        # SELL SIGNAL
                         elif current_position == "LONG" and prev_rsi >= overbought and last_rsi < overbought:
                             logger.info(f"[{bot.symbol}] SELL SIGNAL! RSI crossed down: {prev_rsi:.2f} -> {last_rsi:.2f}")
-                            await execute_trade(bot_id, "SELL", user_id, quantity=0.01, symbol=bot.symbol)
+                            # Pass trade_quantity instead of 0.01
+                            await execute_trade(bot_id, "SELL", user_id, quantity=trade_quantity, symbol=bot.symbol)
                             
                             bot.state.current_position = "FLAT"
                             await session.commit()
@@ -169,8 +174,18 @@ async def execute_trade(bot_id: str, side: str, user_id: str, quantity: float = 
                 # Retrieve the user's decrypted Binance Testnet API keys
                 key_result = await session.execute(select(ApiKeyModel).where(ApiKeyModel.user_id == user_id))
                 api_key_record = key_result.scalar_one_or_none()
-                if not api_key_record:
-                    raise Exception("No paper trading keys found for user.")
+                if not api_key_record or not api_key_record.binance_testnet_api_key:
+                    logger.warning("[Engine] No Testnet keys found. Falling back to internal DB paper simulation.")
+                    from app.modules.live_trading.engine import live_trading_engine
+                    await live_trading_engine.process_bot_signal(
+                        user_id=user_id,
+                        bot_id=bot_id,
+                        symbol=bot.symbol,
+                        side=side.upper(),
+                        quantity=quantity,
+                        execution_mode="PAPER"
+                    )
+                    return
                 
                 api_key = decrypt_api_key(api_key_record.binance_testnet_api_key)
                 secret = decrypt_api_key(api_key_record.binance_testnet_secret)
@@ -178,8 +193,16 @@ async def execute_trade(bot_id: str, side: str, user_id: str, quantity: float = 
                 exchange = get_binance_testnet_client(api_key, secret)
                 
                 try:
+                    normalized_symbol = bot.symbol.upper()
+                    if "/" not in normalized_symbol and len(normalized_symbol) > 3:
+                        if normalized_symbol.endswith("USDT"):
+                            normalized_symbol = f"{normalized_symbol[:-4]}/USDT"
+
+                    # 2. Load markets and format precision
+                    await exchange.load_markets()
+                    precise_amount = float(exchange.amount_to_precision(normalized_symbol, quantity))
                     # Use CCXT testnet to execute a live MARKET order
-                    order = await exchange.create_market_order(bot.symbol, side.lower(), quantity)
+                    order = await exchange.create_market_order(normalized_symbol, side.lower(), precise_amount)
                     exec_price = order.get('average') or order.get('price') or 0.0
                     
                     # Calculate cost (simplified pnl logic here, can be expanded)
