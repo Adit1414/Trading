@@ -106,6 +106,9 @@ async def _bot_trading_loop(bot_id: str, user_id: str) -> None:
     strategy parameters, and triggers trades.
     """
     logger.info(f"[Engine] Loop started for bot {bot_id}")
+
+    import time
+    last_action_time = 0
     
     while True:
         try:
@@ -251,31 +254,30 @@ async def _bot_trading_loop(bot_id: str, user_id: str) -> None:
                             await session.commit()
 
                             
-                # ─── COLOR CATCHER (TESTING STRATEGY) ──────────────────────────────────
+                # ─── COLOR STRATEGY ────────────────────────────────────────────────────
+                # ─── PURE TIMER TEST STRATEGY ────────────────────────────────────────────────
                 elif "COLOR" in bot.strategy_id.upper() or "TEST" in bot.strategy_id.upper():
-                    # Extract dynamic trade size (default 0.01)
                     trade_quantity = float(params.get("trade_size", 0.01))
+                    now = time.time()
                     
-                    # We look at index -2 because index -1 is the currently forming (incomplete) candle
-                    last_completed_candle = df.iloc[-2]
-                    
-                    is_green = last_completed_candle['close'] > last_completed_candle['open']
-                    is_red = last_completed_candle['close'] < last_completed_candle['open']
+                    elapsed_seconds = now - last_action_time
 
-                    # BUY SIGNAL: The last completed candle was RED
-                    if current_position == "FLAT" and is_red:
-                        logger.info(f"[{bot.symbol}] BUY SIGNAL! Red candle detected.")
+                    # BUY SIGNAL: 2 minutes (120s) passed since last action, and we are FLAT
+                    if current_position == "FLAT" and elapsed_seconds >= 120:
+                        logger.info(f"[{bot.symbol}] DUMMY TEST: Buying after 2 mins.")
                         await execute_trade(bot_id, "BUY", user_id, quantity=trade_quantity, symbol=bot.symbol)
                         
                         bot.state.current_position = "LONG"
+                        last_action_time = now
                         await session.commit()
 
-                    # SELL SIGNAL: The last completed candle was GREEN
-                    elif current_position == "LONG" and is_green:
-                        logger.info(f"[{bot.symbol}] SELL SIGNAL! Green candle detected.")
+                    # SELL SIGNAL: 3 minutes (180s) passed since last action, and we are LONG
+                    elif current_position == "LONG" and elapsed_seconds >= 180:
+                        logger.info(f"[{bot.symbol}] DUMMY TEST: Selling after 3 mins.")
                         await execute_trade(bot_id, "SELL", user_id, quantity=trade_quantity, symbol=bot.symbol)
                         
                         bot.state.current_position = "FLAT"
+                        last_action_time = now
                         await session.commit()
         except asyncio.CancelledError:
             # Task was canceled by pause/stop
