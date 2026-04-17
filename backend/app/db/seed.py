@@ -149,7 +149,7 @@ _STRATEGIES: List[Dict[str, Any]] = [
         },
     },
     {
-        "type_code":   "COLOR_CATCHER",
+        "type_code":   "COLOR",
         "name":        "Color Catcher (Test)",
         "description": (
             "High-frequency testing strategy. Buys when the last completed candle was red, "

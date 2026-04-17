@@ -27,6 +27,7 @@ class StrategyName(str, Enum):
     RSI_DIVERGENCE  = "RSI_DIVERGENCE"
     BOLLINGER_BANDS = "BOLLINGER_BANDS"
     MACD_SIGNAL     = "MACD_SIGNAL"
+    COLOR           = "COLOR"
 
 
 class ContractType(str, Enum):

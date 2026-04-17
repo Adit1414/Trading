@@ -59,8 +59,11 @@ async def lifespan(app: FastAPI):
 
     # 🟢 ADD THIS BLOCK HERE 🟢
     try:
-        async for session in get_db():
-            await seed_strategies(session)
+        async with get_db() as session:
+            if session is not None:
+                await seed_strategies(session)
+                await session.commit()  # <-- CRITICAL: Save the changes!
+                logger.info("Successfully seeded database.")
     except Exception as e:
         logger.error(f"Failed to seed database: {e}")
     # --------------------------

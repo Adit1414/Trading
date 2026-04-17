@@ -18,12 +18,14 @@ from app.modules.backtest.strategies.bollinger_bands import BollingerBandsStrate
 from app.modules.backtest.strategies.ema_crossover import EMACrossoverStrategy
 from app.modules.backtest.strategies.macd_signal import MACDSignalStrategy
 from app.modules.backtest.strategies.rsi_divergence import RSIDivergenceStrategy
+from app.modules.backtest.strategies.color import ColorStrategy
 
 STRATEGY_REGISTRY: Dict[str, Type[BaseStrategy]] = {
     "EMA_CROSSOVER":   EMACrossoverStrategy,
     "RSI_DIVERGENCE":  RSIDivergenceStrategy,
     "BOLLINGER_BANDS": BollingerBandsStrategy,
     "MACD_SIGNAL":     MACDSignalStrategy,
+    "COLOR":           ColorStrategy,
 }
 
 
@@ -61,4 +63,5 @@ __all__ = [
     "STRATEGY_REGISTRY",
     "get_strategy_class",
     "list_strategies",
+    "ColorStrategy",
 ]

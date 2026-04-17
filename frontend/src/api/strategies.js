@@ -13,7 +13,7 @@ export function useStrategies() {
       console.log('[useStrategies] Fetched strategies:', data)
       return data
     },
-    staleTime: 5 * 60 * 1000, // 5 min — strategies rarely change
+    staleTime: 1, // 5 min — strategies rarely change
     retry: 2,
   })
 }
