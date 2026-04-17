@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import {
   User, Lock, Bell, BarChart2, Palette, Trash2,
   ShieldCheck, Eye, EyeOff, Camera, Check, AlertTriangle,
@@ -10,6 +10,7 @@ import { useAuthStore } from '../stores/authStore'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import toast from 'react-hot-toast'
+import { getBinanceSettings, saveBinanceSettings } from '../api/settings'
 
 /* ── Section IDs ────────────────────────────────────────────────── */
 const SECTIONS = [
@@ -267,6 +268,17 @@ export default function SettingsPage() {
     currency: 'USD',
   })
   const [tradingLoading, setTradingLoading] = useState(false)
+  const [binanceLoading, setBinanceLoading] = useState(false)
+  const [binanceSaving, setBinanceSaving] = useState(false)
+  const [binanceSettings, setBinanceSettings] = useState({
+    connected: false,
+    api_key_masked: null,
+    has_secret: false,
+  })
+  const [binanceForm, setBinanceForm] = useState({
+    apiKey: '',
+    secret: '',
+  })
 
   /* ── Appearance ── */
   const [theme, setTheme] = useState('dark')
@@ -276,6 +288,25 @@ export default function SettingsPage() {
 
   /* ── Active section (sidebar highlight) ── */
   const [activeSection, setActiveSection] = useState('profile')
+
+  useEffect(() => {
+    const loadBinanceSettings = async () => {
+      setBinanceLoading(true)
+      try {
+        const data = await getBinanceSettings()
+        setBinanceSettings({
+          connected: Boolean(data?.connected),
+          api_key_masked: data?.api_key_masked || null,
+          has_secret: Boolean(data?.has_secret),
+        })
+      } catch (err) {
+        console.error('Failed to load Binance settings:', err)
+      } finally {
+        setBinanceLoading(false)
+      }
+    }
+    loadBinanceSettings()
+  }, [])
 
   /* ── Sidebar scroll ── */
   const scrollTo = (id) => {
@@ -331,6 +362,32 @@ export default function SettingsPage() {
     await new Promise((r) => setTimeout(r, 700))   // simulate API
     toast.success('Trading preferences saved.')
     setTradingLoading(false)
+  }
+
+  const saveBinanceKeys = async () => {
+    if (!binanceForm.apiKey.trim() || !binanceForm.secret.trim()) {
+      toast.error('Please provide both Binance API key and secret.')
+      return
+    }
+    setBinanceSaving(true)
+    try {
+      await saveBinanceSettings({
+        binance_api_key: binanceForm.apiKey.trim(),
+        binance_secret: binanceForm.secret.trim(),
+      })
+      const refreshed = await getBinanceSettings()
+      setBinanceSettings({
+        connected: Boolean(refreshed?.connected),
+        api_key_masked: refreshed?.api_key_masked || null,
+        has_secret: Boolean(refreshed?.has_secret),
+      })
+      setBinanceForm({ apiKey: '', secret: '' })
+      toast.success('Binance API credentials saved securely.')
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Failed to save Binance settings.')
+    } finally {
+      setBinanceSaving(false)
+    }
   }
 
   const handleDeleteAccount = async () => {
@@ -806,6 +863,59 @@ export default function SettingsPage() {
 
           {/* ── 4. TRADING PREFERENCES ─────────────────────────────── */}
           <SectionCard id="trading" title="Trading" subtitle="Default parameters for new bots and backtests" icon={BarChart2} color="#06b6d4">
+            <div
+              style={{
+                padding: '14px',
+                borderRadius: '12px',
+                background: 'rgba(129,140,248,0.08)',
+                border: '1px solid rgba(129,140,248,0.2)',
+                marginBottom: '16px',
+              }}
+            >
+              <p style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '8px' }}>
+                Binance Connection Status
+              </p>
+              {binanceLoading ? (
+                <p style={{ fontSize: '12px', color: '#64748b' }}>Loading connection status…</p>
+              ) : (
+                <div style={{ display: 'flex', gap: '18px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '12px', color: binanceSettings.connected ? '#10b981' : '#f43f5e', fontWeight: 700 }}>
+                    {binanceSettings.connected ? 'Connected' : 'Not connected'}
+                  </span>
+                  <span style={{ fontSize: '12px', color: '#cbd5e1' }}>
+                    API Key: {binanceSettings.api_key_masked || 'Not set'}
+                  </span>
+                  <span style={{ fontSize: '12px', color: '#cbd5e1' }}>
+                    Secret: {binanceSettings.has_secret ? 'Stored' : 'Not stored'}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <FieldRow label="Binance API Key" hint="Stored encrypted in backend">
+              <StyledInput
+                icon={Key}
+                value={binanceForm.apiKey}
+                onChange={(e) => setBinanceForm((p) => ({ ...p, apiKey: e.target.value }))}
+                placeholder="Paste your Binance API key"
+              />
+            </FieldRow>
+
+            <FieldRow label="Binance API Secret" hint="Stored encrypted, never shown in plaintext">
+              <StyledInput
+                icon={ShieldCheck}
+                type="password"
+                value={binanceForm.secret}
+                onChange={(e) => setBinanceForm((p) => ({ ...p, secret: e.target.value }))}
+                placeholder="Paste your Binance API secret"
+              />
+            </FieldRow>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '12px', marginBottom: '12px' }}>
+              <SaveButton loading={binanceSaving} onClick={saveBinanceKeys} label="Save Binance Keys" />
+            </div>
+
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', marginBottom: '12px' }} />
 
             <FieldRow label="Default Capital" hint="Starting capital for new strategies (USD)">
               <StyledInput
