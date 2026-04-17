@@ -23,6 +23,7 @@ export default function CreateBotPage() {
   
   const [takeProfit, setTakeProfit] = useState('')
   const [stopLoss, setStopLoss] = useState('')
+  const [requiresPermission, setRequiresPermission] = useState(false)
 
   useEffect(() => {
     // Select first strategy initially if none selected
@@ -64,6 +65,7 @@ export default function CreateBotPage() {
       parameters,
       take_profit: takeProfit ? Number(takeProfit) : null,
       stop_loss: stopLoss ? Number(stopLoss) : null,
+      requires_permission: requiresPermission,
     }
 
     const idempotencyKey = crypto.randomUUID()
@@ -251,6 +253,7 @@ export default function CreateBotPage() {
                 }}
               />
             </div>
+
             <div>
               <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#94a3b8', marginBottom: '8px' }}>Daily Stop Loss ($)</label>
               <input
@@ -265,6 +268,21 @@ export default function CreateBotPage() {
                 }}
               />
             </div>
+          </div>
+        </div>
+        
+        <div style={{ background: 'linear-gradient(145deg,#131b2f,#0f1729)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '20px 24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <input 
+              type="checkbox" 
+              id="requires_permission" 
+              checked={requiresPermission}
+              onChange={(e) => setRequiresPermission(e.target.checked)}
+              style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#818cf8' }}
+            />
+            <label htmlFor="requires_permission" style={{ color: '#94a3b8', fontSize: '14px', cursor: 'pointer', userSelect: 'none' }}>
+              <strong style={{ color: 'white' }}>Require Manual Approval</strong> (Bot will email you and wait 60s before executing trades)
+            </label>
           </div>
         </div>
 

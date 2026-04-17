@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RefreshCw, ChevronDown, Wifi, WifiOff } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/supabaseClient'
 import {
@@ -36,6 +37,7 @@ function normalizePair(symbol) {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function LiveTradingPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [symbol, setSymbol] = useState('BTCUSDT')
   const [symbolMenuOpen, setSymbolMenuOpen] = useState(false)
 
@@ -241,7 +243,7 @@ export default function LiveTradingPage() {
 
   // ── Action handlers ───────────────────────────────────────────────────────
 
-  const handleApprove = async (orderId) => {
+  const handleApprove = useCallback(async (orderId) => {
     if (!orderId) { toast.error('Missing order id.'); return }
     setApprovingId(orderId)
     try {
@@ -254,7 +256,17 @@ export default function LiveTradingPage() {
     } finally {
       setApprovingId(null)
     }
-  }
+  }, [loadRestData])
+
+  useEffect(() => {
+    const orderIdToApprove = searchParams.get("approve_order");
+    if (orderIdToApprove) {
+      // Immediately clear the URL parameter so it doesn't trigger again on reload
+      setSearchParams({}); 
+      // Trigger the approval process
+      handleApprove(orderIdToApprove);
+    }
+  }, [searchParams, setSearchParams, handleApprove]);
 
   const handleClosePosition = async (positionId) => {
     setClosingId(positionId)

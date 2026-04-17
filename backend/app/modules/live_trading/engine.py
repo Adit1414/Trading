@@ -9,11 +9,11 @@ import ccxt.async_support as ccxt
 from sqlalchemy import and_, select
 from sqlalchemy.exc import ProgrammingError
 
-from app.db.models import BotModel, OrderModel, PositionModel, UserSettingsModel
+from app.db.models import BotModel, OrderModel, PositionModel, UserSettingsModel, UserModel
 from app.db.session import get_db
 from app.services.live.exchange import get_binance_client
 from app.services.live.ws_manager import live_ws_manager
-
+from app.core.notification import send_trade_email, FRONTEND_URL
 logger = logging.getLogger(__name__)
 
 
@@ -163,6 +163,12 @@ class LiveTradingEngine:
         await live_ws_manager.publish_private(
             user_id, "ORDER_EXECUTED", {"execution_mode": "LIVE", "symbol": symbol.upper(), "side": side, "quantity": quantity}
         )
+
+        user = (await session.execute(select(UserModel).where(UserModel.id == user_id))).scalar_one_or_none()
+        if user:
+            subject = f"TRADE EXECUTED: Bot traded {symbol}"
+            body = f"Your autonomous bot successfully executed a {side} order for {quantity} {symbol} at {executed_price}."
+            asyncio.create_task(asyncio.to_thread(send_trade_email, user.email, subject, body))
         return order
 
     async def _queue_for_approval(self, *, session, user_id: str, bot_id: str, symbol: str, side: str, quantity: float) -> OrderModel:
@@ -183,6 +189,20 @@ class LiveTradingEngine:
             "ORDER_APPROVAL_REQUIRED",
             {"symbol": symbol.upper(), "side": side, "quantity": quantity, "expires_at": expires_at.isoformat()},
         )
+
+        user = (await session.execute(select(UserModel).where(UserModel.id == user_id))).scalar_one_or_none()
+        
+        if user:
+            approval_link = f"{FRONTEND_URL}/live?approve_order={order.id}"
+            subject = f"ACTION REQUIRED: Approve Bot Trade for {symbol}"
+            body = (
+                f"Your bot wants to {side} {quantity} {symbol}.\n\n"
+                f"Autonomy is OFF. You have 60 seconds to approve this trade.\n\n"
+                f"Click here to approve: {approval_link}\n\n"
+                f"If you do not click within 1 minute, the trade will be canceled."
+            )
+            # Run in background so it doesn't block the engine
+            asyncio.create_task(asyncio.to_thread(send_trade_email, user.email, subject, body))
         return order
 
     async def approve_order(self, *, user_id: str, order_id: str) -> OrderModel:
