@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-import { useEffect, useState, useRef } from 'react'
-=======
 import { useEffect, useState } from 'react'
->>>>>>> origin/papertrading-integration
 import {
   User, Lock, Bell, BarChart2, Trash2,
   ShieldCheck, Eye, EyeOff, Camera, Check, AlertTriangle,
@@ -14,9 +10,6 @@ import { useAuthStore } from '../stores/authStore'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import toast from 'react-hot-toast'
-<<<<<<< HEAD
-import { getBinanceSettings, saveBinanceSettings } from '../api/settings'
-=======
 import {
   deleteUserAccount,
   exportUserData,
@@ -31,7 +24,6 @@ import {
   updateProfile,
   updateTradingPreferences,
 } from '../api/settings'
->>>>>>> origin/papertrading-integration
 
 /* ── Section IDs ────────────────────────────────────────────────── */
 const SECTIONS = [
