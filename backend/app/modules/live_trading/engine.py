@@ -82,6 +82,7 @@ class LiveTradingEngine:
                 raise ValueError("Invalid execution mode.")
 
             await session.flush()
+            await session.commit()
             return order
 
     async def _execute_paper(self, *, session, user_id: str, bot_id: str, symbol: str, side: str, quantity: float) -> OrderModel:
@@ -271,6 +272,7 @@ class LiveTradingEngine:
             )
             await live_ws_manager.publish_private(user_id, "ORDER_APPROVED", {"order_id": order_id, "status": order.status})
             await session.flush()
+            await session.commit()
             return order
 
 

@@ -39,7 +39,7 @@ from sqlalchemy.orm import selectinload
 from app.core.redis import get_redis
 from app.modules.bots.events import channel_name, make_event
 from app.db.session import get_db
-from app.db.models import BotModel, PaperTradeLedgerModel, ApiKeyModel
+from app.db.models import BotModel, PaperTradeLedgerModel, ApiKeyModel, StrategyModel
 from app.core.security import decrypt_api_key
 from app.services.market_data.binance import get_binance_testnet_client
 
@@ -122,7 +122,14 @@ async def _bot_trading_loop(bot_id: str, user_id: str) -> None:
                 if not bot or bot.status != "RUNNING":
                     logger.info(f"[Engine] Bot {bot_id} is not RUNNING. Exiting loop.")
                     break
-                
+
+                strategy_result = await session.execute(
+                    select(StrategyModel).where(StrategyModel.id == bot.strategy_id)
+                )
+                strategy = strategy_result.scalar_one_or_none()
+                strategy_code = strategy.type_code.upper() if strategy else ""
+                # ----------------------------------------------------
+
                 params = bot.parameters or {}
                 current_position = bot.state.current_position if bot.state else "FLAT"
 
@@ -201,7 +208,7 @@ async def _bot_trading_loop(bot_id: str, user_id: str) -> None:
                             await session.commit()
 
                 # ─── BOLLINGER BANDS ─────────────────────────────────────────────────
-                elif "BOLLINGER_BANDS" in bot.strategy_id:
+                elif "BOLLINGER_BANDS" in strategy_code:
                     period = int(params.get("period", 20))
                     std_dev = float(params.get("std_dev", 2.0))
                     trade_quantity = float(params.get("trade_size", 0.01))
@@ -227,7 +234,7 @@ async def _bot_trading_loop(bot_id: str, user_id: str) -> None:
                             await session.commit()
 
                 # ─── MACD SIGNAL ─────────────────────────────────────────────────────
-                elif "MACD_SIGNAL" in bot.strategy_id:
+                elif "MACD_SIGNAL" in strategy_code:
                     fast_period = int(params.get("fast_period", 12))
                     slow_period = int(params.get("slow_period", 26))
                     signal_period = int(params.get("signal_period", 9))
@@ -256,7 +263,7 @@ async def _bot_trading_loop(bot_id: str, user_id: str) -> None:
                             
                 # ─── COLOR STRATEGY ────────────────────────────────────────────────────
                 # ─── PURE TIMER TEST STRATEGY ────────────────────────────────────────────────
-                elif "COLOR" in bot.strategy_id.upper() or "TEST" in bot.strategy_id.upper():
+                elif "COLOR" in strategy_code or "TEST" in strategy_code:
                     trade_quantity = float(params.get("trade_size", 0.01))
                     now = time.time()
                     
