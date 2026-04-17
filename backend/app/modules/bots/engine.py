@@ -42,7 +42,7 @@ from app.services.market_data.binance import get_binance_testnet_client
 
 logger = logging.getLogger(__name__)
 
-
+_ACTIVE_BOT_TASKS: Dict[str, asyncio.Task] = {}
 # ─── Internal publish helper ──────────────────────────────────────────────────
 
 async def _publish(
@@ -67,7 +67,91 @@ async def _publish(
         # Never let a publish failure propagate — it would crash the BackgroundTask
         logger.warning("[Engine] Redis publish failed (channel=%s): %s", channel, exc)
 
+# ─── Strategy Math ────────────────────────────────────────────────────────────
 
+def calculate_rsi(series: pd.Series, period: int = 14) -> pd.Series:
+    """Standard RSI calculation matching your backtest logic."""
+    delta = series.diff()
+    gain = delta.clip(lower=0).rolling(period, min_periods=period).mean()
+    loss = (-delta.clip(upper=0)).rolling(period, min_periods=period).mean()
+    rs = gain / loss.replace(0, np.nan)
+    return 100 - (100 / (1 + rs))
+
+# ─── The Evaluator Loop ───────────────────────────────────────────────────────
+
+async def _bot_trading_loop(bot_id: str, user_id: str) -> None:
+    """
+    The heart of the bot. Runs continuously, evaluates market data against
+    strategy parameters, and triggers trades.
+    """
+    logger.info(f"[Engine] Loop started for bot {bot_id}")
+    
+    while True:
+        try:
+            # 1. Fetch the latest bot state and parameters from DB
+            async with get_db() as session:
+                bot = (await session.execute(
+                    select(BotModel).options(selectinload(BotModel.state)).where(BotModel.id == bot_id)
+                )).scalar_one_or_none()
+                
+                # Exit loop if bot was deleted or is no longer RUNNING
+                if not bot or bot.status != "RUNNING":
+                    logger.info(f"[Engine] Bot {bot_id} is not RUNNING. Exiting loop.")
+                    break
+                
+                params = bot.parameters or {}
+                current_position = bot.state.current_position if bot.state else "FLAT"
+
+                # 2. Fetch the last 50 candles (1m timeframe)
+                exchange = get_binance_testnet_client("", "") # Anonymous client just for public market data
+                try:
+                    # fetch_ohlcv returns: [timestamp, open, high, low, close, volume]
+                    candles = await exchange.fetch_ohlcv(bot.symbol, timeframe='1m', limit=50)
+                finally:
+                    await exchange.close()
+
+                # 3. Process data & calculate indicators
+                df = pd.DataFrame(candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+                
+                if "RSI" in bot.strategy_id:
+                    period = int(params.get("period", 14))
+                    oversold = float(params.get("oversold", 30.0))
+                    overbought = float(params.get("overbought", 70.0))
+                    
+                    df['rsi'] = calculate_rsi(df['close'], period)
+                    
+                    # Need at least 2 RSI values to check for a crossover
+                    if len(df['rsi'].dropna()) >= 2:
+                        last_rsi = df['rsi'].iloc[-1]
+                        prev_rsi = df['rsi'].iloc[-2]
+
+                        # BUY SIGNAL: RSI crosses UP over 'oversold' threshold
+                        if current_position == "FLAT" and prev_rsi <= oversold and last_rsi > oversold:
+                            logger.info(f"[{bot.symbol}] BUY SIGNAL! RSI crossed up: {prev_rsi:.2f} -> {last_rsi:.2f}")
+                            await execute_trade(bot_id, "BUY", user_id, quantity=0.01, symbol=bot.symbol)
+                            
+                            bot.state.current_position = "LONG"
+                            await session.commit()
+
+                        # SELL SIGNAL: RSI crosses DOWN under 'overbought' threshold
+                        elif current_position == "LONG" and prev_rsi >= overbought and last_rsi < overbought:
+                            logger.info(f"[{bot.symbol}] SELL SIGNAL! RSI crossed down: {prev_rsi:.2f} -> {last_rsi:.2f}")
+                            await execute_trade(bot_id, "SELL", user_id, quantity=0.01, symbol=bot.symbol)
+                            
+                            bot.state.current_position = "FLAT"
+                            await session.commit()
+            
+        except asyncio.CancelledError:
+            # Task was canceled by pause/stop
+            logger.info(f"[Engine] Loop for bot {bot_id} was cancelled.")
+            break
+        except Exception as e:
+            logger.error(f"[Engine] Error in bot loop {bot_id}: {e}")
+            
+        # Wait 20 seconds before checking the market again
+        await asyncio.sleep(20)
+
+# ─── Trade Execution ──────────────────────────────────────────────────────────
 async def execute_trade(bot_id: str, side: str, user_id: str, quantity: float = 10.0, symbol: str = "BTCUSDT") -> None:
     """
     Called by the bot logic when deciding to place a trade.
@@ -126,7 +210,23 @@ async def execute_trade(bot_id: str, side: str, user_id: str, quantity: float = 
                     await exchange.close()
             else:
                 # MAINNET logic (Module 5) goes here
-                pass
+                from app.modules.live_trading.engine import live_trading_engine
+                
+                await live_trading_engine.process_bot_signal(
+                    user_id=user_id,
+                    bot_id=bot_id,
+                    symbol=bot.symbol,
+                    side=side.upper(),
+                    quantity=quantity,
+                    execution_mode="LIVE"
+                )
+                
+                await _publish(
+                    user_id=user_id,
+                    event_type="SUCCESS",
+                    message=f"Live signal processed: {side} {quantity} {bot.symbol}",
+                    bot_id=bot_id
+                )
 
     except Exception as exc:
         logger.exception("[Engine] ERROR executing trade for bot_id=%s", bot_id)
@@ -152,23 +252,19 @@ async def start_bot(bot_id: str, user_id: Optional[str] = None) -> None:
     """
     logger.info("[Engine] START  bot_id=%s — initialising trading loop", bot_id)
     try:
-        # Simulate async initialisation work (exchange handshake, data load, etc.)
-        await asyncio.sleep(0.1)
-        logger.info("[Engine] START  bot_id=%s — trading loop active ✓", bot_id)
-        await _publish(
-            user_id=user_id,
-            event_type="SUCCESS",
-            message=f"Bot {bot_id} started — trading loop is active.",
-            bot_id=bot_id,
-        )
-    except Exception:
-        logger.exception("[Engine] START  bot_id=%s — unexpected error", bot_id)
-        await _publish(
-            user_id=user_id,
-            event_type="ERROR",
-            message=f"Bot {bot_id} failed to start. Check logs.",
-            bot_id=bot_id,
-        )
+        # Check if already running
+        if bot_id in _ACTIVE_BOT_TASKS and not _ACTIVE_BOT_TASKS[bot_id].done():
+            logger.warning(f"Bot {bot_id} is already running in memory.")
+            return
+
+        # Spawn the background task and save it to the registry
+        task = asyncio.create_task(_bot_trading_loop(bot_id, user_id))
+        _ACTIVE_BOT_TASKS[bot_id] = task
+        
+        await _publish(user_id, "SUCCESS", f"Bot {bot_id} started — trading loop is active.", bot_id)
+    except Exception as e:
+        logger.exception(f"Failed to start bot {bot_id}")
+        await _publish(user_id, "ERROR", f"Bot {bot_id} failed to start: {e}", bot_id)
 
 
 async def pause_bot(bot_id: str, user_id: Optional[str] = None) -> None:
@@ -183,23 +279,15 @@ async def pause_bot(bot_id: str, user_id: Optional[str] = None) -> None:
     """
     logger.info("[Engine] PAUSE  bot_id=%s — suspending signal loop", bot_id)
     try:
-        # Simulate async teardown work (flush pending orders, checkpoint state)
-        await asyncio.sleep(0.1)
-        logger.info("[Engine] PAUSE  bot_id=%s — signal loop suspended ✓", bot_id)
-        await _publish(
-            user_id=user_id,
-            event_type="SUCCESS",
-            message=f"Bot {bot_id} paused — open positions preserved.",
-            bot_id=bot_id,
-        )
-    except Exception:
-        logger.exception("[Engine] PAUSE  bot_id=%s — unexpected error", bot_id)
-        await _publish(
-            user_id=user_id,
-            event_type="ERROR",
-            message=f"Bot {bot_id} failed to pause. Check logs.",
-            bot_id=bot_id,
-        )
+        # Find the task and cancel it
+        task = _ACTIVE_BOT_TASKS.get(bot_id)
+        if task and not task.done():
+            task.cancel()
+            del _ACTIVE_BOT_TASKS[bot_id]
+            
+        await _publish(user_id, "SUCCESS", f"Bot {bot_id} paused.", bot_id)
+    except Exception as e:
+        await _publish(user_id, "ERROR", f"Failed to pause bot: {e}", bot_id)
 
 
 async def stop_bot(bot_id: str, user_id: Optional[str] = None) -> None:
@@ -214,23 +302,17 @@ async def stop_bot(bot_id: str, user_id: Optional[str] = None) -> None:
     """
     logger.info("[Engine] STOP   bot_id=%s — closing positions & archiving", bot_id)
     try:
-        # Simulate async cleanup (position close, stream teardown, DB archive)
-        await asyncio.sleep(0.1)
-        logger.info("[Engine] STOP   bot_id=%s — bot archived ✓", bot_id)
-        await _publish(
-            user_id=user_id,
-            event_type="SUCCESS",
-            message=f"Bot {bot_id} stopped — positions closed, state archived.",
-            bot_id=bot_id,
-        )
-    except Exception:
-        logger.exception("[Engine] STOP   bot_id=%s — unexpected error", bot_id)
-        await _publish(
-            user_id=user_id,
-            event_type="ERROR",
-            message=f"Bot {bot_id} failed to stop cleanly. Check logs.",
-            bot_id=bot_id,
-        )
+        # Find the task and cancel it
+        task = _ACTIVE_BOT_TASKS.get(bot_id)
+        if task and not task.done():
+            task.cancel()
+            del _ACTIVE_BOT_TASKS[bot_id]
+            
+        # TODO: Add logic here to execute market close orders if desired.
+            
+        await _publish(user_id, "SUCCESS", f"Bot {bot_id} stopped permanently.", bot_id)
+    except Exception as e:
+        await _publish(user_id, "ERROR", f"Failed to stop bot: {e}", bot_id)
 
 
 async def trigger_circuit_breaker(
@@ -249,6 +331,7 @@ async def trigger_circuit_breaker(
         message=reason,
         bot_id=bot_id,
     )
+    await pause_bot(bot_id=bot_id, user_id=user_id)
 
 
 # ─── Dispatch table ───────────────────────────────────────────────────────────
