@@ -13,7 +13,8 @@ from app.db.models import BotModel, OrderModel, PositionModel, UserSettingsModel
 from app.db.session import get_db
 from app.services.live.exchange import get_binance_client
 from app.services.live.ws_manager import live_ws_manager
-from app.core.notification import send_trade_email, FRONTEND_URL
+from app.core.notification import send_trade_email
+from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
@@ -196,7 +197,7 @@ class LiveTradingEngine:
         user = (await session.execute(select(UserModel).where(UserModel.id == user_id))).scalar_one_or_none()
         
         if user:
-            approval_link = f"{FRONTEND_URL}/live?approve_order={order.id}"
+            approval_link = f"{settings.FRONTEND_URL}/live?approve_order={order.id}"
             subject = f"ACTION REQUIRED: Approve Bot Trade for {symbol}"
             body = (
                 f"Your bot wants to {side} {quantity} {symbol}.\n\n"

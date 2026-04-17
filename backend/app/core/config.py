@@ -66,6 +66,13 @@ class Settings(BaseSettings):
     # How long an idempotency key is kept before expiry (seconds, default 24 h)
     IDEMPOTENCY_TTL_SECONDS: int = 86_400
 
+    SMTP_SERVER: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SENDER_EMAIL: str
+    SENDER_PASSWORD: str
+    FRONTEND_URL: str = "http://localhost:5173"
+    
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     # ── CORS ─────────────────────────────────────────────────────────────────
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173"]
 
@@ -87,14 +94,7 @@ class Settings(BaseSettings):
         )
     
     # ── Email Notification Settings ────────────────────────────────────────── 
-    SMTP_SERVER: str = "smtp.gmail.com"
-    SMTP_PORT: int = 587
-    SENDER_EMAIL: str
-    SENDER_PASSWORD: str
-    FRONTEND_URL: str = "http://localhost:5173"
 
-    class Config:
-        env_file = ".env"
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
