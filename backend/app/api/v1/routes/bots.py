@@ -67,6 +67,7 @@ class BotCreate(BaseModel):
     stop_loss:   Optional[float] = Field(default=None, le=0,
                                           description="Daily PnL lower-limit circuit breaker (USDT)")
     name:        str             = Field(default="My Bot", min_length=1, max_length=120)
+    requires_permission: bool    = Field(default=False, description="Require manual approval for trades")
 
 
 class BotStateUpdate(BaseModel):
@@ -90,6 +91,7 @@ class BotResponse(BaseModel):
     status:      str            # RUNNING | PAUSED | STOPPED
     pnl:         float
     created_at:  datetime
+    requires_permission: bool
 
     model_config = {"from_attributes": True}
 
@@ -124,6 +126,7 @@ def _to_response(bot: BotModel) -> BotResponse:
         status=frontend_status,
         pnl=pnl,
         created_at=bot.created_at,
+        requires_permission=bot.requires_permission,
     )
 
 
@@ -191,6 +194,7 @@ async def create_bot(
             daily_pnl_upper_limit=body.take_profit,
             daily_pnl_lower_limit=body.stop_loss,
             trade_quantity=None,
+            requires_permission=body.requires_permission,
         )
         session.add(bot)
         try:

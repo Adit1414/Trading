@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RefreshCw, ChevronDown, Wifi, WifiOff } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
+import axiosClient from '../lib/axiosClient'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/supabaseClient'
 import {
@@ -38,6 +39,7 @@ function normalizePair(symbol) {
 
 export default function LiveTradingPage() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const [activeBots, setActiveBots] = useState([])
   const [symbol, setSymbol] = useState('BTCUSDT')
   const [symbolMenuOpen, setSymbolMenuOpen] = useState(false)
 
@@ -69,17 +71,20 @@ export default function LiveTradingPage() {
   const loadRestData = useCallback(async () => {
     setRefreshing(true)
     try {
-      const [wallet, pos, openOrders, trades] = await Promise.all([
+      const [wallet, pos, openOrders, trades, botsRes] = await Promise.all([
         getWalletBalances(),
         getPositions(),
         getOpenOrders(),
         getTradeHistory(1, 50),
+        axiosClient.get('/bots?environment=MAINNET').catch(() => ({ data: [] }))
       ])
       if (!mountedRef.current) return
       setBalances(wallet || { live: {}, paper: {} })
       setPositions(Array.isArray(pos) ? pos : [])
       setOrders(Array.isArray(openOrders) ? openOrders : [])
       setHistory(Array.isArray(trades) ? trades : [])
+      const activeOnly = (botsRes?.data || []).filter(bot => bot.status !== 'STOPPED');
+      setActiveBots(activeOnly);
     } catch (err) {
       console.error('Failed loading live trading data:', err)
     } finally {
@@ -422,6 +427,43 @@ export default function LiveTradingPage() {
           >
             {approvingId === approvalRequest.id ? 'Approving…' : 'Approve Order'}
           </button>
+        </div>
+      )}
+
+      {/* ── Active Bots ──────────────────────────────────────────────────────── */}
+      {activeBots.length > 0 && (
+        <div style={{ marginBottom: '20px' }}>
+          <h3 style={{ color: 'white', fontSize: '15px', fontWeight: 700, marginBottom: '12px' }}>Active Live Bots</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px' }}>
+            {activeBots.map(bot => (
+              <div key={bot.id} style={{
+                background: 'linear-gradient(145deg, #131b2f 0%, #0f1729 100%)',
+                border: '1px solid rgba(129,140,248,0.2)',
+                borderRadius: '16px', padding: '16px',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+              }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981' }} />
+                    <span style={{ color: 'white', fontWeight: 700, fontSize: '14px' }}>{bot.name}</span>
+                  </div>
+                  <div style={{ color: '#94a3b8', fontSize: '12px', marginTop: '6px' }}>
+                    Tracking <strong style={{ color: '#a5b4fc' }}>{bot.symbol}</strong> • {bot.requires_permission ? 'Manual Approval' : 'Fully Autonomous'}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <span style={{ 
+                    padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 700,
+                    background: bot.status === 'RUNNING' ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)', 
+                    color: bot.status === 'RUNNING' ? '#10b981' : '#f59e0b', 
+                    border: bot.status === 'RUNNING' ? '1px solid rgba(16,185,129,0.2)' : '1px solid rgba(245,158,11,0.2)'
+                  }}>
+                    {bot.status}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
