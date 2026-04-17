@@ -129,6 +129,9 @@ class LiveTradingEngine:
         )
         try:
             normalized_symbol = symbol.upper()
+            if "/" not in normalized_symbol and len(normalized_symbol) > 3:
+                if normalized_symbol.endswith("USDT"):
+                    normalized_symbol = f"{normalized_symbol[:-4]}/USDT"
             await exchange.load_markets()
             precise_amount = float(exchange.amount_to_precision(normalized_symbol, quantity))
             response: dict[str, Any] = await exchange.create_market_order(normalized_symbol, side.lower(), precise_amount)

@@ -85,7 +85,16 @@ class Settings(BaseSettings):
             if self.BINANCE_USE_TESTNET_FOR_HISTORY
             else self.BINANCE_MAINNET_BASE_URL
         )
+    
+    # ── Email Notification Settings ────────────────────────────────────────── 
+    SMTP_SERVER: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SENDER_EMAIL: str
+    SENDER_PASSWORD: str
+    FRONTEND_URL: str = "http://localhost:5173"
 
+    class Config:
+        env_file = ".env"
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
