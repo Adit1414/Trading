@@ -66,11 +66,11 @@ class LiveWebSocketManager:
         if self._tasks:
             return
         streams = {
-            "ticker": "wss://data-stream.binance.vision:9443/ws/!ticker@arr",
+            # 1. Use the specific symbol ticker instead of the heavy all-market array
+            "ticker": "wss://data-stream.binance.vision:9443/ws/btcusdt@ticker",
             "book_depth": "wss://data-stream.binance.vision:9443/ws/btcusdt@depth20@100ms",
+            # 2. ONLY subscribe to the 1m chart to prevent timestamp collisions
             "kline_1m": "wss://data-stream.binance.vision:9443/ws/btcusdt@kline_1m",
-            "kline_5m": "wss://data-stream.binance.vision:9443/ws/btcusdt@kline_5m",
-            "kline_1h": "wss://data-stream.binance.vision:9443/ws/btcusdt@kline_1h",
         }
         for name, stream_url in streams.items():
             self._tasks[name] = asyncio.create_task(self._pump_binance_stream(name, stream_url))
@@ -90,12 +90,17 @@ class LiveWebSocketManager:
                             payload = json.loads(raw)
                         except json.JSONDecodeError:
                             continue
+                        
+                        # 3. Wrap the ticker in an array so your React frontend accepts it
+                        if stream_name == "ticker" and isinstance(payload, dict):
+                            payload = [payload]
+
                         await self.publish_public(stream_name, payload)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 logger.warning("Stream %s disconnected: %s. Retrying.", stream_name, exc)
-                await asyncio.sleep(2)
+                await asyncio.sleep(2)  
 
 
 live_ws_manager = LiveWebSocketManager()
