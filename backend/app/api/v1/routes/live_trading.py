@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, status
@@ -8,13 +9,14 @@ from sqlalchemy import and_, desc, select
 
 from app.core.auth import decode_token, get_current_user
 from app.core.security import decrypt_api_key, encrypt_api_key
-from app.db.models import BotModel, OrderModel, PositionModel, TradeLogModel, UserSettingsModel
+from app.db.models import BotModel, OrderModel, PositionModel, TradeLogModel, UserSettingsModel, ApiKeyModel
 from app.db.session import get_db
 from app.modules.live_trading.engine import live_trading_engine
 from app.services.live.exchange import get_binance_client
 from app.services.live.ws_manager import live_ws_manager
 
 router = APIRouter(tags=["Live Trading"])
+logger = logging.getLogger(__name__)
 
 
 class CredentialsIn(BaseModel):
@@ -85,24 +87,59 @@ async def get_wallet_balances(user_id: str = Depends(get_current_user)):
     async with get_db() as session:
         if session is None:
             raise HTTPException(status_code=503, detail="Database is not configured.")
-        settings = (await session.execute(select(UserSettingsModel).where(UserSettingsModel.user_id == user_id))).scalar_one_or_none()
-        if settings is None or not settings.binance_api_key or not settings.binance_secret:
-            raise HTTPException(status_code=400, detail="Live Binance credentials are not configured.")
-        exchange = get_binance_client(settings.binance_api_key, settings.binance_secret, sandbox=False)
-        try:
-            live_balance = await exchange.fetch_balance()
-        except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"Failed to fetch Binance balances: {exc}") from exc
-        finally:
-            await exchange.close()
+        
+        # 1. Try to get Mainnet (Live) keys
+        live_settings = (await session.execute(select(UserSettingsModel).where(UserSettingsModel.user_id == user_id))).scalar_one_or_none()
+        
+        # 2. Also try to get Testnet (Paper) keys
+        paper_keys = (await session.execute(select(ApiKeyModel).where(ApiKeyModel.user_id == user_id))).scalar_one_or_none()
+        
+        live_balance = {}
+        # Try to fetch from Mainnet if configured
+        if live_settings and live_settings.binance_api_key and live_settings.binance_secret:
+            try:
+                # First attempt: Mainnet
+                exchange = get_binance_client(live_settings.binance_api_key, live_settings.binance_secret, sandbox=False)
+                try:
+                    bal = await exchange.fetch_balance()
+                    live_balance = bal.get("total", {})
+                finally:
+                    await exchange.close()
+            except Exception as exc:
+                logger.warning("[Live] Mainnet auth failed, trying the same keys on Testnet: %s", exc)
+                try:
+                    # Second attempt: User might have put Testnet keys in the Mainnet slots
+                    exchange = get_binance_client(live_settings.binance_api_key, live_settings.binance_secret, sandbox=True)
+                    try:
+                        bal = await exchange.fetch_balance()
+                        live_balance = bal.get("total", {})
+                        if live_balance:
+                            logger.info("[Live] Successfully fetched balances using supplied keys on Testnet.")
+                    finally:
+                        await exchange.close()
+                except Exception as exc2:
+                    logger.warning("[Live] Testnet auth also failed for Mainnet keys: %s", exc2)
+        
+        # If still no balance, try the dedicated Paper (Testnet) keys if they exist
+        if not live_balance and paper_keys and paper_keys.binance_testnet_api_key:
+            exchange = get_binance_client(paper_keys.binance_testnet_api_key, paper_keys.binance_testnet_secret, sandbox=True)
+            try:
+                bal = await exchange.fetch_balance()
+                live_balance = bal.get("total", {})
+            except Exception as exc:
+                logger.warning("[Paper] Failed to fetch dedicated Testnet balances: %s", exc)
+            finally:
+                await exchange.close()
 
+        # Paper bot/position equity (internal DB only)
         paper = (
             await session.execute(
                 select(PositionModel).where(and_(PositionModel.user_id == user_id, PositionModel.is_open.is_(True)))
             )
         ).scalars().all()
         paper_equity = sum(float(p.size) * float(p.entry_price) for p in paper)
-        return {"live": live_balance.get("total", {}), "paper": {"total_equity": paper_equity}}
+        
+        return {"live": live_balance, "paper": {"total_equity": paper_equity}}
 
 
 @router.get("/positions")
@@ -211,6 +248,7 @@ async def panic_close_position(position_id: str, user_id: str = Depends(get_curr
             if settings is None or not settings.binance_api_key or not settings.binance_secret:
                 raise HTTPException(status_code=400, detail="Live Binance credentials are not configured.")
 
+            # get_binance_client handles decryption internally
             exchange = get_binance_client(
                 settings.binance_api_key,
                 settings.binance_secret,
@@ -253,6 +291,7 @@ async def panic_cancel_order(order_id: str, user_id: str = Depends(get_current_u
             if settings is None or not settings.binance_api_key or not settings.binance_secret:
                 raise HTTPException(status_code=400, detail="Live Binance credentials are not configured.")
 
+            # get_binance_client handles decryption internally
             exchange = get_binance_client(
                 settings.binance_api_key,
                 settings.binance_secret,
