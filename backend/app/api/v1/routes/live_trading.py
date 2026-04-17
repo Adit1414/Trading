@@ -8,13 +8,13 @@ from sqlalchemy import and_, desc, select
 
 from app.core.auth import decode_token, get_current_user
 from app.core.security import decrypt_api_key, encrypt_api_key
-from app.db.models import OrderModel, PositionModel, TradeLogModel, UserSettingsModel
+from app.db.models import BotModel, OrderModel, PositionModel, TradeLogModel, UserSettingsModel
 from app.db.session import get_db
 from app.modules.live_trading.engine import live_trading_engine
 from app.services.live.exchange import get_binance_client
 from app.services.live.ws_manager import live_ws_manager
 
-router = APIRouter(prefix="/api", tags=["Live Trading"])
+router = APIRouter(tags=["Live Trading"])
 
 
 class CredentialsIn(BaseModel):
@@ -157,11 +157,37 @@ async def panic_close_position(position_id: str, user_id: str = Depends(get_curr
             raise HTTPException(status_code=503, detail="Database is not configured.")
         position = (
             await session.execute(
-                select(PositionModel).where(and_(PositionModel.id == position_id, PositionModel.user_id == user_id))
+                select(PositionModel)
+                .where(and_(PositionModel.id == position_id, PositionModel.user_id == user_id))
+                .with_for_update()
             )
         ).scalar_one_or_none()
         if position is None or not position.is_open:
             raise HTTPException(status_code=404, detail="Open position not found.")
+
+        is_live = False
+        if position.bot_id:
+            bot = (await session.execute(select(BotModel).where(BotModel.id == position.bot_id))).scalar_one_or_none()
+            is_live = bool(bot and bot.environment == "MAINNET")
+
+        if is_live:
+            settings = (await session.execute(select(UserSettingsModel).where(UserSettingsModel.user_id == user_id))).scalar_one_or_none()
+            if settings is None or not settings.binance_api_key or not settings.binance_secret:
+                raise HTTPException(status_code=400, detail="Live Binance credentials are not configured.")
+
+            exchange = get_binance_client(
+                decrypt_api_key(settings.binance_api_key),
+                decrypt_api_key(settings.binance_secret),
+                sandbox=False,
+            )
+            try:
+                close_side = "sell" if position.side.upper() == "BUY" else "buy"
+                await exchange.create_market_order(position.pair, close_side, float(position.size))
+            except Exception as exc:
+                raise HTTPException(status_code=502, detail=f"Failed to close LIVE position on Binance: {exc}") from exc
+            finally:
+                await exchange.close()
+
         position.is_open = False
         await live_ws_manager.publish_private(user_id, "PANIC_POSITION_CLOSED", {"position_id": position_id})
         return {"message": "Position closed."}
@@ -173,12 +199,34 @@ async def panic_cancel_order(order_id: str, user_id: str = Depends(get_current_u
         if session is None:
             raise HTTPException(status_code=503, detail="Database is not configured.")
         order = (
-            await session.execute(select(OrderModel).where(and_(OrderModel.id == order_id, OrderModel.user_id == user_id)))
+            await session.execute(
+                select(OrderModel)
+                .where(and_(OrderModel.id == order_id, OrderModel.user_id == user_id))
+                .with_for_update()
+            )
         ).scalar_one_or_none()
         if order is None:
             raise HTTPException(status_code=404, detail="Order not found.")
         if order.status not in {"OPEN", "PENDING_APPROVAL"}:
             raise HTTPException(status_code=400, detail="Order is not cancellable.")
+
+        if order.execution_mode == "LIVE" and order.exchange_order_id:
+            settings = (await session.execute(select(UserSettingsModel).where(UserSettingsModel.user_id == user_id))).scalar_one_or_none()
+            if settings is None or not settings.binance_api_key or not settings.binance_secret:
+                raise HTTPException(status_code=400, detail="Live Binance credentials are not configured.")
+
+            exchange = get_binance_client(
+                decrypt_api_key(settings.binance_api_key),
+                decrypt_api_key(settings.binance_secret),
+                sandbox=False,
+            )
+            try:
+                await exchange.cancel_order(order.exchange_order_id, order.symbol)
+            except Exception as exc:
+                raise HTTPException(status_code=502, detail=f"Failed to cancel LIVE order on Binance: {exc}") from exc
+            finally:
+                await exchange.close()
+
         order.status = "CANCELLED"
         await live_ws_manager.publish_private(user_id, "ORDER_CANCELLED", {"order_id": order_id})
         return {"message": "Order cancelled."}

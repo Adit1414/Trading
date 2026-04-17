@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import ccxt.async_support as ccxt
 from sqlalchemy import and_, select
 from sqlalchemy.exc import ProgrammingError
 
@@ -29,6 +30,17 @@ def _is_missing_orders_table_error(exc: Exception) -> bool:
 
 
 class LiveTradingEngine:
+    async def _fetch_market_price(self, symbol: str) -> float:
+        exchange = ccxt.binance({"enableRateLimit": True, "options": {"defaultType": "spot"}})
+        try:
+            ticker = await exchange.fetch_ticker(symbol.upper())
+            last = ticker.get("last")
+            if last is None:
+                raise ValueError(f"Could not fetch last price for {symbol}.")
+            return float(last)
+        finally:
+            await exchange.close()
+
     async def process_bot_signal(
         self,
         *,
@@ -73,7 +85,7 @@ class LiveTradingEngine:
             return order
 
     async def _execute_paper(self, *, session, user_id: str, bot_id: str, symbol: str, side: str, quantity: float) -> OrderModel:
-        simulated_price = 100.0
+        simulated_price = await self._fetch_market_price(symbol)
         order = OrderModel(
             user_id=user_id,
             bot_id=bot_id,
@@ -176,7 +188,11 @@ class LiveTradingEngine:
             if session is None:
                 raise RuntimeError("Database is not configured.")
             order = (
-                await session.execute(select(OrderModel).where(and_(OrderModel.id == order_id, OrderModel.user_id == user_id)))
+                await session.execute(
+                    select(OrderModel)
+                    .where(and_(OrderModel.id == order_id, OrderModel.user_id == user_id))
+                    .with_for_update()
+                )
             ).scalar_one_or_none()
             if order is None:
                 raise ValueError("Order not found.")
@@ -230,13 +246,15 @@ async def expire_pending_orders_task() -> None:
                 if session is not None:
                     now = datetime.now(timezone.utc)
                     result = await session.execute(
-                        select(OrderModel).where(
+                        select(OrderModel)
+                        .where(
                             and_(
                                 OrderModel.status == "PENDING_APPROVAL",
                                 OrderModel.expires_at.is_not(None),
                                 OrderModel.expires_at < now,
                             )
                         )
+                        .with_for_update(skip_locked=True)
                     )
                     expired = result.scalars().all()
                     for order in expired:

@@ -20,23 +20,24 @@ token supplied via a GET query parameter:
 
 How Supabase JWTs work
 ──────────────────────
-Supabase issues HS256-signed JWTs.  The signing secret is the project's
-JWT Secret (Project Settings → API → JWT Secret).  The `sub` claim is
-the authenticated user's UUID.
+Supabase can issue either HS256-signed JWTs (legacy, uses SUPABASE_JWT_SECRET)
+or ES256-signed JWTs (modern, uses asymmetric keys).  This module supports
+both: it first tries JWKS-based validation (works for ES256 and HS256), then
+falls back to the shared secret if SUPABASE_URL is not configured.
 
-Environment variable required
-──────────────────────────────
-    SUPABASE_JWT_SECRET=<your-32-char-secret>
-
-If SUPABASE_JWT_SECRET is not set the dependency raises 503 with a clear
-message rather than silently accepting all requests.
+Environment variables
+──────────────────────
+    SUPABASE_URL=https://<ref>.supabase.co          (required for JWKS path)
+    SUPABASE_JWT_SECRET=<your-secret>               (fallback / legacy)
 """
 from __future__ import annotations
 
 import logging
+from functools import lru_cache
 from typing import Optional
 
 import jwt  # PyJWT
+from jwt import PyJWKClient
 from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -46,34 +47,31 @@ logger = logging.getLogger(__name__)
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
-# Supabase uses HS256 for its project JWTs
-_ALGORITHM = "HS256"
-
 # Claim that holds the user UUID
 _SUB_CLAIM = "sub"
 
+# JWKS URL for Supabase asymmetric key validation (ES256 / RS256)
+_JWKS_URL_TEMPLATE = "{supabase_url}/auth/v1/.well-known/jwks.json"
 
-def _jwt_secret() -> str:
-    """Return the JWT secret or raise 503 if unconfigured."""
-    secret = settings.SUPABASE_JWT_SECRET
-    if not secret:
-        logger.error(
-            "[Auth] SUPABASE_JWT_SECRET is not configured. "
-            "Set it in backend/.env (Project Settings → API → JWT Secret)."
-        )
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                "Authentication service is not configured on this server. "
-                "Set SUPABASE_JWT_SECRET in the environment."
-            ),
-        )
-    return secret
+
+@lru_cache(maxsize=1)
+def _get_jwks_client() -> Optional[PyJWKClient]:
+    """Return a cached PyJWKClient if SUPABASE_URL is configured, else None."""
+    url = settings.SUPABASE_URL
+    if not url:
+        return None
+    jwks_url = _JWKS_URL_TEMPLATE.format(supabase_url=url.rstrip("/"))
+    logger.info("[Auth] Using JWKS endpoint: %s", jwks_url)
+    return PyJWKClient(jwks_url, cache_keys=True)
 
 
 def decode_token(token: str) -> str:
     """
     Decode and verify a Supabase JWT.
+
+    Validation strategy (in order):
+    1. JWKS-based validation  — works for ES256 / RS256 (modern Supabase projects).
+    2. HS256 shared-secret    — fallback for legacy projects using SUPABASE_JWT_SECRET.
 
     Returns the user_id (UUID string from the `sub` claim).
     Raises HTTP 401 on any validation failure.
@@ -81,13 +79,53 @@ def decode_token(token: str) -> str:
     This is also called directly by SSE endpoints that receive the token
     via a query parameter instead of an Authorization header.
     """
-    secret = _jwt_secret()
+    # ── Path 1: JWKS (asymmetric, works for ES256 / RS256) ────────────────────
+    jwks_client = _get_jwks_client()
+    if jwks_client is not None:
+        try:
+            signing_key = jwks_client.get_signing_key_from_jwt(token)
+            payload = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=["RS256", "ES256", "HS256"],
+                options={"verify_aud": False},
+            )
+            user_id: Optional[str] = payload.get(_SUB_CLAIM)
+            if not user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token is missing the 'sub' claim.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            return user_id
+        except HTTPException:
+            raise
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has expired.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        except Exception as exc:
+            logger.warning("[Auth] JWKS validation failed, trying HS256 fallback: %s", exc)
+            # Fall through to HS256 path below
+
+    # ── Path 2: HS256 shared-secret (legacy) ──────────────────────────────────
+    secret = settings.SUPABASE_JWT_SECRET
+    if not secret:
+        logger.error(
+            "[Auth] Neither JWKS validation succeeded nor SUPABASE_JWT_SECRET is set."
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service is not configured on this server.",
+        )
     try:
-        # Decode without verifying signature since Supabase now often issues
-        # ES256 tokens and we do not have the public key JWKS loaded.
         payload = jwt.decode(
             token,
-            options={"verify_signature": False, "verify_aud": False},
+            key=secret,
+            algorithms=["HS256"],
+            options={"verify_signature": True, "verify_aud": False},
         )
     except jwt.ExpiredSignatureError:
         raise HTTPException(
