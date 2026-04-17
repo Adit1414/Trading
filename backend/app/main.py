@@ -33,6 +33,8 @@ from app.core.tasks import portfolio_snapshot_task
 from app.modules.live_trading.engine import expire_pending_orders_task
 from app.services.live.reconciliation import run_startup_reconciliation
 from app.services.live.ws_manager import live_ws_manager
+from app.db.seed import seed_strategies
+from app.db.session import get_db
 
 logging.basicConfig(
     level=logging.DEBUG if settings.DEBUG else logging.INFO,
@@ -54,6 +56,14 @@ async def lifespan(app: FastAPI):
         settings.BACKTEST_RATE_LIMIT,
         settings.BACKTEST_RATE_LIMIT_WINDOW,
     )
+
+    # 🟢 ADD THIS BLOCK HERE 🟢
+    try:
+        async for session in get_db():
+            await seed_strategies(session)
+    except Exception as e:
+        logger.error(f"Failed to seed database: {e}")
+    # --------------------------
 
     # Start the continuous background snapshot task lock loop
     snapshot_bg_task = asyncio.create_task(portfolio_snapshot_task())
