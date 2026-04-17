@@ -27,7 +27,7 @@ function toWsBase() {
 }
 
 function normalizePair(symbol) {
-  if (!symbol) return ''
+  if (typeof symbol !== 'string' || !symbol) return ''
   if (symbol.includes('/')) return symbol
   if (symbol.endsWith('USDT')) return `${symbol.slice(0, -4)}/USDT`
   return symbol
@@ -124,7 +124,9 @@ export default function LiveTradingPage() {
           const payload = data?.payload
 
           if (type === 'ticker' && Array.isArray(payload)) {
-            const match = payload.find((i) => i?.s === symbol) || payload.find((i) => i?.s === 'BTCUSDT') || payload[0]
+            const match = payload.find((i) => (i?.s || i?.symbol) === symbol) || 
+                          payload.find((i) => (i?.s || i?.symbol) === 'BTCUSDT') || 
+                          payload[0]
             if (match) setTicker(match)
             return
           }
@@ -152,9 +154,12 @@ export default function LiveTradingPage() {
             chartRef.current?.updateCandle(ohlc)
           }
         } catch (e) {
-          console.error('Public WS parse error:', e)
+          console.error('[LiveWS] Public stream parse error:', e)
         }
       },
+      onerror(err) {
+        console.error('[LiveWS] Public stream error:', err)
+      }
     }
 
     publicWsRef.current = createPublicWs(wsBase, publicHandlers, () => {
@@ -200,9 +205,12 @@ export default function LiveTradingPage() {
               )
             }
           } catch (e) {
-            console.error('Private WS parse error:', e)
+            console.error('[LiveWS] Private stream parse error:', e)
           }
         },
+        onerror(err) {
+          console.error('[LiveWS] Private stream error:', err)
+        }
       }
 
       privateWsRef.current = createPrivateWs(wsBase, token, privateHandlers, loadRestData, mountedRef)
@@ -293,8 +301,10 @@ export default function LiveTradingPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  if (!symbol) return <div style={{ color: 'white', padding: '40px' }}>Loading...</div>
+
   return (
-    <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '28px 24px' }}>
+    <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '28px 24px', minHeight: '100vh' }}>
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
@@ -445,21 +455,21 @@ export default function LiveTradingPage() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <div>
               <p style={{ color: '#10b981', fontWeight: 700, fontSize: '11px', letterSpacing: '0.08em', marginBottom: '8px', textTransform: 'uppercase' }}>Bids</p>
-              {(orderBook.bids || []).slice(0, 10).map((b, idx) => (
+              {ticker ? (orderBook.bids || []).slice(0, 10).map((b, idx) => (
                 <div key={`b-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', color: '#10b981', fontSize: '12px', padding: '2px 0', opacity: 0.8 }}>
-                  <span>{Number(b[0]).toFixed(2)}</span>
-                  <span style={{ color: '#cbd5e1' }}>{Number(b[1]).toFixed(4)}</span>
+                  <span>{b?.[0] ? Number(b[0]).toFixed(2) : '—'}</span>
+                  <span style={{ color: '#cbd5e1' }}>{b?.[1] ? Number(b[1]).toFixed(4) : '—'}</span>
                 </div>
-              ))}
+              )) : <div style={{ fontSize: '12px', color: '#475569' }}>Loading...</div>}
             </div>
             <div>
               <p style={{ color: '#f43f5e', fontWeight: 700, fontSize: '11px', letterSpacing: '0.08em', marginBottom: '8px', textTransform: 'uppercase' }}>Asks</p>
-              {(orderBook.asks || []).slice(0, 10).map((a, idx) => (
+              {ticker ? (orderBook.asks || []).slice(0, 10).map((a, idx) => (
                 <div key={`a-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', color: '#f43f5e', fontSize: '12px', padding: '2px 0', opacity: 0.8 }}>
-                  <span>{Number(a[0]).toFixed(2)}</span>
-                  <span style={{ color: '#cbd5e1' }}>{Number(a[1]).toFixed(4)}</span>
+                  <span>{a?.[0] ? Number(a[0]).toFixed(2) : '—'}</span>
+                  <span style={{ color: '#cbd5e1' }}>{a?.[1] ? Number(a[1]).toFixed(4) : '—'}</span>
                 </div>
-              ))}
+              )) : <div style={{ fontSize: '12px', color: '#475569' }}>Loading...</div>}
             </div>
           </div>
         </div>

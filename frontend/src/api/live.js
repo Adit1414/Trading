@@ -68,13 +68,20 @@ export async function fetchOhlcv(symbol = 'BTCUSDT', interval = '1m', limit = 10
   if (!res.ok) throw new Error(`Binance klines fetch failed: ${res.status}`)
   const raw = await res.json()
   // Binance kline array: [openTime, open, high, low, close, ...]
-  return raw.map((k) => ({
-    time: Math.floor(k[0] / 1000),     // ms → seconds
-    open:  parseFloat(k[1]),
-    high:  parseFloat(k[2]),
-    low:   parseFloat(k[3]),
-    close: parseFloat(k[4]),
-  }))
+  return raw
+    .map((k) => {
+      const ohlc = {
+        time: Math.floor(k[0] / 1000),      // ms → seconds
+        open:  parseFloat(k[1]),
+        high:  parseFloat(k[2]),
+        low:   parseFloat(k[3]),
+        close: parseFloat(k[4]),
+      }
+      // Validate all fields are finite numbers
+      const isValid = [ohlc.time, ohlc.open, ohlc.high, ohlc.low, ohlc.close].every(Number.isFinite)
+      return isValid ? ohlc : null
+    })
+    .filter(Boolean)
 }
 
 // ── WebSocket factory helpers ──────────────────────────────────────────────

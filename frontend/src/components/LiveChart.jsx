@@ -1,5 +1,5 @@
 import { useEffect, useImperativeHandle, useRef, forwardRef } from 'react'
-import { createChart, CrosshairMode, LineStyle } from 'lightweight-charts'
+import { createChart, CrosshairMode, LineStyle, ColorType } from 'lightweight-charts'
 
 /**
  * LiveChart — a dark-themed candlestick chart powered by TradingView's
@@ -33,70 +33,89 @@ const LiveChart = forwardRef(function LiveChart({ initialData = [], symbol = 'BT
   // Mount chart once
   useEffect(() => {
     if (!containerRef.current) return
+    let chartInstance = null
 
-    const chart = createChart(containerRef.current, {
-      width: containerRef.current.clientWidth,
-      height: 340,
-      layout: {
-        background: { color: '#0f172a' },
-        textColor: '#94a3b8',
-        fontSize: 12,
-        fontFamily: "'Inter', 'Roboto', sans-serif",
-      },
-      grid: {
-        vertLines: { color: 'rgba(255,255,255,0.04)', style: LineStyle.Dotted },
-        horzLines: { color: 'rgba(255,255,255,0.04)', style: LineStyle.Dotted },
-      },
-      crosshair: {
-        mode: CrosshairMode.Normal,
-        vertLine: { color: '#475569', labelBackgroundColor: '#1e293b' },
-        horzLine: { color: '#475569', labelBackgroundColor: '#1e293b' },
-      },
-      rightPriceScale: {
-        borderColor: 'rgba(255,255,255,0.08)',
-        textColor: '#64748b',
-      },
-      timeScale: {
-        borderColor: 'rgba(255,255,255,0.08)',
-        timeVisible: true,
-        secondsVisible: false,
-        tickMarkFormatter: (time) => {
-          const d = new Date(time * 1000)
-          return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`
+    try {
+      const width = containerRef.current.clientWidth || 300
+      const height = 340
+
+      const chart = createChart(containerRef.current, {
+        width,
+        height,
+        layout: {
+          background: { type: ColorType.Solid, color: '#0f172a' },
+          textColor: '#94a3b8',
+          fontSize: 12,
+          fontFamily: "'Inter', 'Roboto', sans-serif",
         },
-      },
-      handleScroll: { mouseWheel: true, pressedMouseMove: true },
-      handleScale: { mouseWheel: true, pinch: true },
-    })
+        grid: {
+          vertLines: { color: 'rgba(255,255,255,0.04)', style: LineStyle.Dotted },
+          horzLines: { color: 'rgba(255,255,255,0.04)', style: LineStyle.Dotted },
+        },
+        crosshair: {
+          mode: CrosshairMode.Normal,
+          vertLine: { color: '#475569', labelBackgroundColor: '#1e293b' },
+          horzLine: { color: '#475569', labelBackgroundColor: '#1e293b' },
+        },
+        rightPriceScale: {
+          borderColor: 'rgba(255,255,255,0.08)',
+          textColor: '#64748b',
+        },
+        timeScale: {
+          borderColor: 'rgba(255,255,255,0.08)',
+          timeVisible: true,
+          secondsVisible: false,
+          tickMarkFormatter: (time) => {
+            try {
+              const d = new Date(time * 1000)
+              return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`
+            } catch (e) {
+              return ''
+            }
+          },
+        },
+        handleScroll: { mouseWheel: true, pressedMouseMove: true },
+        handleScale: { mouseWheel: true, pinch: true },
+      })
 
-    chartRef.current = chart
+      chartRef.current = chart
+      chartInstance = chart
 
-    const series = chart.addCandlestickSeries({
-      upColor: '#10b981',
-      downColor: '#f43f5e',
-      borderUpColor: '#10b981',
-      borderDownColor: '#f43f5e',
-      wickUpColor: '#10b981',
-      wickDownColor: '#f43f5e',
-    })
-    seriesRef.current = series
+      const series = chart.addCandlestickSeries({
+        upColor: '#10b981',
+        downColor: '#f43f5e',
+        borderUpColor: '#10b981',
+        borderDownColor: '#f43f5e',
+        wickUpColor: '#10b981',
+        wickDownColor: '#f43f5e',
+      })
+      seriesRef.current = series
 
-    if (initialData.length > 0) {
-      series.setData(initialData)
-      chart.timeScale().fitContent()
+      if (initialData && initialData.length > 0) {
+        series.setData(initialData)
+        chart.timeScale().fitContent()
+      }
+    } catch (err) {
+      console.error('[LiveChart] Chart initialization failed:', err)
     }
 
     // Responsive resize
     const ro = new ResizeObserver(() => {
-      if (containerRef.current && chart) {
-        chart.applyOptions({ width: containerRef.current.clientWidth })
-      }
+      try {
+        if (containerRef.current && chartRef.current) {
+          chartRef.current.applyOptions({ width: containerRef.current.clientWidth })
+        }
+      } catch (e) { /* ignore resize errors */ }
     })
     ro.observe(containerRef.current)
 
     return () => {
       ro.disconnect()
-      chart.remove()
+      if (chartInstance) {
+        try {
+          chartInstance.remove()
+        } catch (e) { /* ignore */ }
+      }
       chartRef.current = null
       seriesRef.current = null
     }
@@ -105,9 +124,13 @@ const LiveChart = forwardRef(function LiveChart({ initialData = [], symbol = 'BT
 
   // Update data when initialData prop changes (e.g., symbol switch)
   useEffect(() => {
-    if (seriesRef.current && initialData.length > 0) {
-      seriesRef.current.setData(initialData)
-      chartRef.current?.timeScale().fitContent()
+    try {
+      if (seriesRef.current && initialData) {
+        seriesRef.current.setData(initialData)
+        chartRef.current?.timeScale().fitContent()
+      }
+    } catch (err) {
+      console.error('[LiveChart] Data update failed:', err)
     }
   }, [initialData])
 
