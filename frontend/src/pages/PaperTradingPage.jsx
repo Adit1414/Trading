@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import axios from 'axios'; // <-- Add this
 import {
   AlertTriangle,
   RotateCcw,
@@ -29,6 +30,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import PortfolioPerformanceCard from '../components/PortfolioPerformanceCard';
+import LiveChart from '../components/LiveChart';
 
 const CHART_DATA = [
   { time: '00:00', price: 64100 },
@@ -45,6 +47,8 @@ export default function PaperTradingPage() {
   const [strategyId, setStrategyId] = useState('');
   const [assetMode, setAssetMode] = useState('BTC/USDT');
   const [activeTimeframe, setActiveTimeframe] = useState('1D');
+  const chartRef = useRef(null);
+  const [chartData, setChartData] = useState([]);
 
   const { data: activeBots = [], isLoading: loadingBots } = usePaperBots();
   const { data: ledgerTrades = [], isLoading: loadingLedger } = usePaperLedger();
@@ -103,6 +107,51 @@ export default function PaperTradingPage() {
     }
   }, [strategiesData, strategyId]);
 
+  // Fetch live market data for the chart
+  useEffect(() => {
+    let ws = null;
+    const symbolClean = assetMode.replace('/', '');
+    const symbolLower = symbolClean.toLowerCase();
+
+    // 1. Fetch historical data to populate the chart initially
+    axios.get(`https://api.binance.com/api/v3/klines?symbol=${symbolClean}&interval=1m&limit=100`)
+      .then(res => {
+        const formattedData = res.data.map(d => ({
+          time: d[0] / 1000,
+          open: parseFloat(d[1]),
+          high: parseFloat(d[2]),
+          low: parseFloat(d[3]),
+          close: parseFloat(d[4])
+        }));
+        setChartData(formattedData);
+
+        // 2. Open Binance WebSocket for real-time tick updates
+        ws = new WebSocket(`wss://stream.binance.com:9443/ws/${symbolLower}@kline_1m`);
+        ws.onmessage = (event) => {
+          const message = JSON.parse(event.data);
+          const kline = message.k;
+          const candle = {
+            time: kline.t / 1000,
+            open: parseFloat(kline.o),
+            high: parseFloat(kline.h),
+            low: parseFloat(kline.l),
+            close: parseFloat(kline.c)
+          };
+          
+          // Push the live tick directly to the chart component
+          if (chartRef.current) {
+            chartRef.current.updateCandle(candle);
+          }
+        };
+      })
+      .catch(err => console.error("Failed to fetch klines", err));
+
+    // Cleanup websocket if the user changes coins or leaves the page
+    return () => {
+      if (ws) ws.close();
+    };
+  }, [assetMode]);
+
   const currentBalance = portfolioData?.length > 0 ? portfolioData[portfolioData.length - 1].equity : 0.0;
   const rawPnl = portfolioData?.length > 0 && portfolioData[0].equity > 0 
     ? (currentBalance - portfolioData[0].equity) 
@@ -135,6 +184,7 @@ export default function PaperTradingPage() {
         defaultParams[k] = v.default || 0;
       });
     }
+
 
     const payload = {
       symbol: assetMode,
@@ -319,6 +369,19 @@ export default function PaperTradingPage() {
             </div>
           </div>
 
+        </div>
+
+        <div className="w-full bg-[#131b2f] border border-white/5 rounded-2xl p-[24px]">
+          <h2 className="text-[16px] font-bold text-slate-300 tracking-wide mb-[16px]">
+            Live Market View ({assetMode})
+          </h2>
+          <div className="h-[450px] w-full rounded-xl overflow-hidden">
+             <LiveChart 
+               ref={chartRef} 
+               initialData={chartData} 
+               symbol={assetMode.replace('/', '')} 
+             /> 
+          </div>
         </div>
 
         {/* MAIN SPLIT */}

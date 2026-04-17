@@ -148,6 +148,24 @@ _STRATEGIES: List[Dict[str, Any]] = [
             "required": ["fast_period", "slow_period", "signal_period", "source"],
         },
     },
+    {
+        "type_code":   "COLOR_CATCHER",
+        "name":        "Color Catcher (Test)",
+        "description": (
+            "High-frequency testing strategy. Buys when the last completed candle was red, "
+            "and sells when it was green."
+        ),
+        "parameter_schema": {
+            "type": "object",
+            "properties": {
+                "trade_size": {
+                    "type": "number", "default": 0.01, "minimum": 0.001, "maximum": 1.0,
+                    "description": "Trade quantity (e.g. 0.01 BTC)",
+                }
+            },
+            "required": ["trade_size"],
+        },
+    },
 ]
 
 

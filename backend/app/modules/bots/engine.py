@@ -80,6 +80,24 @@ def calculate_rsi(series: pd.Series, period: int = 14) -> pd.Series:
     rs = gain / loss.replace(0, np.nan)
     return 100 - (100 / (1 + rs))
 
+def calculate_ema(series: pd.Series, period: int) -> pd.Series:
+    """Calculates Exponential Moving Average"""
+    return series.ewm(span=period, adjust=False).mean()
+
+def calculate_bollinger_bands(series: pd.Series, period: int = 20, std_dev: float = 2.0):
+    """Calculates Bollinger Bands (Upper and Lower)"""
+    sma = series.rolling(window=period).mean()
+    std = series.rolling(window=period).std()
+    return sma + (std * std_dev), sma - (std * std_dev)
+
+def calculate_macd(series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9):
+    """Calculates MACD Line and Signal Line"""
+    fast_ema = calculate_ema(series, fast)
+    slow_ema = calculate_ema(series, slow)
+    macd_line = fast_ema - slow_ema
+    signal_line = calculate_ema(macd_line, signal)
+    return macd_line, signal_line
+
 # ─── The Evaluator Loop ───────────────────────────────────────────────────────
 
 async def _bot_trading_loop(bot_id: str, user_id: str) -> None:
@@ -152,7 +170,113 @@ async def _bot_trading_loop(bot_id: str, user_id: str) -> None:
                             
                             bot.state.current_position = "FLAT"
                             await session.commit()
-            
+
+                elif "EMA_CROSSOVER" in bot.strategy_id:
+                    fast_period = int(params.get("fast_period", 12))
+                    slow_period = int(params.get("slow_period", 26))
+                    trade_quantity = float(params.get("trade_size", 0.01))
+                    
+                    df['fast_ema'] = calculate_ema(df['close'], fast_period)
+                    df['slow_ema'] = calculate_ema(df['close'], slow_period)
+                    
+                    if len(df.dropna()) >= 2:
+                        last = df.iloc[-1]
+                        prev = df.iloc[-2]
+                        
+                        # BUY: Fast crosses ABOVE Slow
+                        if current_position == "FLAT" and prev['fast_ema'] <= prev['slow_ema'] and last['fast_ema'] > last['slow_ema']:
+                            logger.info(f"[{bot.symbol}] BUY SIGNAL! EMA crossed up.")
+                            await execute_trade(bot_id, "BUY", user_id, quantity=trade_quantity, symbol=bot.symbol)
+                            bot.state.current_position = "LONG"
+                            await session.commit()
+                            
+                        # SELL: Fast crosses BELOW Slow
+                        elif current_position == "LONG" and prev['fast_ema'] >= prev['slow_ema'] and last['fast_ema'] < last['slow_ema']:
+                            logger.info(f"[{bot.symbol}] SELL SIGNAL! EMA crossed down.")
+                            await execute_trade(bot_id, "SELL", user_id, quantity=trade_quantity, symbol=bot.symbol)
+                            bot.state.current_position = "FLAT"
+                            await session.commit()
+
+                # ─── BOLLINGER BANDS ─────────────────────────────────────────────────
+                elif "BOLLINGER_BANDS" in bot.strategy_id:
+                    period = int(params.get("period", 20))
+                    std_dev = float(params.get("std_dev", 2.0))
+                    trade_quantity = float(params.get("trade_size", 0.01))
+                    
+                    df['upper'], df['lower'] = calculate_bollinger_bands(df['close'], period, std_dev)
+                    
+                    if len(df.dropna()) >= 2:
+                        last = df.iloc[-1]
+                        prev = df.iloc[-2]
+                        
+                        # BUY: Price crosses BELOW Lower Band (Oversold bounce)
+                        if current_position == "FLAT" and prev['close'] >= prev['lower'] and last['close'] < last['lower']:
+                            logger.info(f"[{bot.symbol}] BUY SIGNAL! Price hit lower BB.")
+                            await execute_trade(bot_id, "BUY", user_id, quantity=trade_quantity, symbol=bot.symbol)
+                            bot.state.current_position = "LONG"
+                            await session.commit()
+                            
+                        # SELL: Price crosses ABOVE Upper Band (Overbought reject)
+                        elif current_position == "LONG" and prev['close'] <= prev['upper'] and last['close'] > last['upper']:
+                            logger.info(f"[{bot.symbol}] SELL SIGNAL! Price hit upper BB.")
+                            await execute_trade(bot_id, "SELL", user_id, quantity=trade_quantity, symbol=bot.symbol)
+                            bot.state.current_position = "FLAT"
+                            await session.commit()
+
+                # ─── MACD SIGNAL ─────────────────────────────────────────────────────
+                elif "MACD_SIGNAL" in bot.strategy_id:
+                    fast_period = int(params.get("fast_period", 12))
+                    slow_period = int(params.get("slow_period", 26))
+                    signal_period = int(params.get("signal_period", 9))
+                    trade_quantity = float(params.get("trade_size", 0.01))
+                    
+                    df['macd'], df['signal'] = calculate_macd(df['close'], fast_period, slow_period, signal_period)
+                    
+                    if len(df.dropna()) >= 2:
+                        last = df.iloc[-1]
+                        prev = df.iloc[-2]
+                        
+                        # BUY: MACD line crosses ABOVE Signal line
+                        if current_position == "FLAT" and prev['macd'] <= prev['signal'] and last['macd'] > last['signal']:
+                            logger.info(f"[{bot.symbol}] BUY SIGNAL! MACD bullish cross.")
+                            await execute_trade(bot_id, "BUY", user_id, quantity=trade_quantity, symbol=bot.symbol)
+                            bot.state.current_position = "LONG"
+                            await session.commit()
+                            
+                        # SELL: MACD line crosses BELOW Signal line
+                        elif current_position == "LONG" and prev['macd'] >= prev['signal'] and last['macd'] < last['signal']:
+                            logger.info(f"[{bot.symbol}] SELL SIGNAL! MACD bearish cross.")
+                            await execute_trade(bot_id, "SELL", user_id, quantity=trade_quantity, symbol=bot.symbol)
+                            bot.state.current_position = "FLAT"
+                            await session.commit()
+
+                            
+                # ─── COLOR CATCHER (TESTING STRATEGY) ──────────────────────────────────
+                elif "COLOR" in bot.strategy_id.upper() or "TEST" in bot.strategy_id.upper():
+                    # Extract dynamic trade size (default 0.01)
+                    trade_quantity = float(params.get("trade_size", 0.01))
+                    
+                    # We look at index -2 because index -1 is the currently forming (incomplete) candle
+                    last_completed_candle = df.iloc[-2]
+                    
+                    is_green = last_completed_candle['close'] > last_completed_candle['open']
+                    is_red = last_completed_candle['close'] < last_completed_candle['open']
+
+                    # BUY SIGNAL: The last completed candle was RED
+                    if current_position == "FLAT" and is_red:
+                        logger.info(f"[{bot.symbol}] BUY SIGNAL! Red candle detected.")
+                        await execute_trade(bot_id, "BUY", user_id, quantity=trade_quantity, symbol=bot.symbol)
+                        
+                        bot.state.current_position = "LONG"
+                        await session.commit()
+
+                    # SELL SIGNAL: The last completed candle was GREEN
+                    elif current_position == "LONG" and is_green:
+                        logger.info(f"[{bot.symbol}] SELL SIGNAL! Green candle detected.")
+                        await execute_trade(bot_id, "SELL", user_id, quantity=trade_quantity, symbol=bot.symbol)
+                        
+                        bot.state.current_position = "FLAT"
+                        await session.commit()
         except asyncio.CancelledError:
             # Task was canceled by pause/stop
             logger.info(f"[Engine] Loop for bot {bot_id} was cancelled.")
