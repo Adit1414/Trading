@@ -92,6 +92,7 @@ def get_binance_testnet_client(api_key: str, secret: str) -> ccxt.binance:
         "enableRateLimit": True,
         "options": {
             "defaultType": "spot",
+            "adjustForTimeDifference": True,
         }
     })
     # MUST call set_sandbox_mode to route to testnet.binance.vision

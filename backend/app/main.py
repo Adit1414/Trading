@@ -30,6 +30,8 @@ from app.core.idempotency import _CachedResponse
 from app.core.rate_limiter import limiter
 from app.core.redis import close_redis
 from app.core.tasks import portfolio_snapshot_task
+from app.modules.live_trading.engine import expire_pending_orders_task
+from app.services.live.ws_manager import live_ws_manager
 
 logging.basicConfig(
     level=logging.DEBUG if settings.DEBUG else logging.INFO,
@@ -54,12 +56,16 @@ async def lifespan(app: FastAPI):
 
     # Start the continuous background snapshot task lock loop
     snapshot_bg_task = asyncio.create_task(portfolio_snapshot_task())
+    pending_expiry_task = asyncio.create_task(expire_pending_orders_task())
+    await live_ws_manager.start_market_streams()
 
     yield
 
     # Shutdown
     logger.info("%s shutting down.", settings.APP_NAME)
     snapshot_bg_task.cancel()
+    pending_expiry_task.cancel()
+    await live_ws_manager.stop_market_streams()
     await close_redis()
 
 def create_app() -> FastAPI:

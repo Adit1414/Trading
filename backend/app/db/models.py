@@ -95,6 +95,15 @@ class UserModel(Base):
     api_keys: Mapped[list["ApiKeyModel"]] = relationship(
         cascade="all, delete-orphan", back_populates="user"
     )
+    settings: Mapped["UserSettingsModel | None"] = relationship(
+        back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
+    orders: Mapped[list["OrderModel"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    positions: Mapped[list["PositionModel"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<User id={self.id} email={self.email}>"
@@ -320,6 +329,13 @@ class BotModel(Base):
         default=dict,
         comment="User's chosen strategy parameter values",
     )
+    requires_permission: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+        comment="If true, bot orders require explicit user approval.",
+    )
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True),
         nullable=False,
@@ -346,6 +362,8 @@ class BotModel(Base):
     paper_trades: Mapped[list["PaperTradeLedgerModel"]] = relationship(
         back_populates="bot", cascade="all, delete-orphan"
     )
+    orders: Mapped[list["OrderModel"]] = relationship(back_populates="bot")
+    positions: Mapped[list["PositionModel"]] = relationship(back_populates="bot")
 
     def __repr__(self) -> str:
         return f"<Bot id={self.id} name={self.name} status={self.status}>"
@@ -677,3 +695,77 @@ class PortfolioHistoryModel(Base):
     
     def __repr__(self) -> str:
         return f"<PortfolioHistory user={self.user_id} env={self.environment} bal={self.total_balance}>"
+
+
+class UserSettingsModel(Base):
+    __tablename__ = "user_settings"
+
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    binance_api_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    binance_secret: Mapped[str | None] = mapped_column(String, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+    user: Mapped["UserModel"] = relationship(back_populates="settings")
+
+
+class OrderModel(Base):
+    __tablename__ = "orders"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    bot_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("bots.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    side: Mapped[str] = mapped_column(String(4), nullable=False)
+    quantity: Mapped[float] = mapped_column(Numeric(20, 8), nullable=False)
+    execution_mode: Mapped[str] = mapped_column(String(8), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    exchange_order_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    limit_price: Mapped[float | None] = mapped_column(Numeric(20, 8), nullable=True)
+    executed_price: Mapped[float | None] = mapped_column(Numeric(20, 8), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now(), index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    user: Mapped["UserModel"] = relationship(back_populates="orders")
+    bot: Mapped["BotModel | None"] = relationship(back_populates="orders")
+
+
+class PositionModel(Base):
+    __tablename__ = "positions"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    bot_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("bots.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    pair: Mapped[str] = mapped_column(String(20), nullable=False)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    size: Mapped[float] = mapped_column(Numeric(20, 8), nullable=False)
+    entry_price: Mapped[float] = mapped_column(Numeric(20, 8), nullable=False)
+    unrealized_pnl: Mapped[float] = mapped_column(Numeric(20, 8), nullable=False, default=0)
+    is_open: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    user: Mapped["UserModel"] = relationship(back_populates="positions")
+    bot: Mapped["BotModel | None"] = relationship(back_populates="positions")
