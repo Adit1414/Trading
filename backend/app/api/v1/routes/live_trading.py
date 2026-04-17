@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, desc, select
 
 from app.core.auth import decode_token, get_current_user
+from app.core.idempotency import IdempotencyContext, idempotency_dep
 from app.core.security import decrypt_api_key, encrypt_api_key
 from app.db.models import BotModel, OrderModel, PositionModel, TradeLogModel, UserSettingsModel, ApiKeyModel
 from app.db.session import get_db
@@ -224,7 +225,11 @@ async def get_trade_history(page: int = 1, page_size: int = 50, user_id: str = D
 
 
 @router.post("/positions/{position_id}/close")
-async def panic_close_position(position_id: str, user_id: str = Depends(get_current_user)):
+async def panic_close_position(
+    position_id: str,
+    user_id: str = Depends(get_current_user),
+    ctx: IdempotencyContext = Depends(idempotency_dep),
+):
     async with get_db() as session:
         if session is None:
             raise HTTPException(status_code=503, detail="Database is not configured.")
@@ -266,11 +271,17 @@ async def panic_close_position(position_id: str, user_id: str = Depends(get_curr
 
         position.is_open = False
         await live_ws_manager.publish_private(user_id, "PANIC_POSITION_CLOSED", {"position_id": position_id})
-        return {"message": "Position closed."}
+        result = {"message": "Position closed."}
+        await ctx.store(result)
+        return result
 
 
 @router.delete("/orders/{order_id}")
-async def panic_cancel_order(order_id: str, user_id: str = Depends(get_current_user)):
+async def panic_cancel_order(
+    order_id: str,
+    user_id: str = Depends(get_current_user),
+    ctx: IdempotencyContext = Depends(idempotency_dep),
+):
     async with get_db() as session:
         if session is None:
             raise HTTPException(status_code=503, detail="Database is not configured.")
@@ -306,16 +317,24 @@ async def panic_cancel_order(order_id: str, user_id: str = Depends(get_current_u
 
         order.status = "CANCELLED"
         await live_ws_manager.publish_private(user_id, "ORDER_CANCELLED", {"order_id": order_id})
-        return {"message": "Order cancelled."}
+        result = {"message": "Order cancelled."}
+        await ctx.store(result)
+        return result
 
 
 @router.post("/orders/{order_id}/approve")
-async def approve_pending_order(order_id: str, user_id: str = Depends(get_current_user)):
+async def approve_pending_order(
+    order_id: str,
+    user_id: str = Depends(get_current_user),
+    ctx: IdempotencyContext = Depends(idempotency_dep),
+):
     try:
         order = await live_trading_engine.approve_order(user_id=user_id, order_id=order_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"id": order.id, "status": order.status, "executed_price": float(order.executed_price or 0)}
+    result = {"id": order.id, "status": order.status, "executed_price": float(order.executed_price or 0)}
+    await ctx.store(result)
+    return result
 
 
 @router.post("/internal/bot-signal")

@@ -31,6 +31,7 @@ from app.core.rate_limiter import limiter
 from app.core.redis import close_redis
 from app.core.tasks import portfolio_snapshot_task
 from app.modules.live_trading.engine import expire_pending_orders_task
+from app.services.live.reconciliation import run_startup_reconciliation
 from app.services.live.ws_manager import live_ws_manager
 
 logging.basicConfig(
@@ -58,6 +59,14 @@ async def lifespan(app: FastAPI):
     snapshot_bg_task = asyncio.create_task(portfolio_snapshot_task())
     pending_expiry_task = asyncio.create_task(expire_pending_orders_task())
     await live_ws_manager.start_market_streams()
+
+    # ── Startup reconciliation (non-blocking, 30 s timeout) ───────────────
+    try:
+        await asyncio.wait_for(run_startup_reconciliation(), timeout=30.0)
+    except asyncio.TimeoutError:
+        logger.warning("[Recon] Startup reconciliation timed out after 30 s — startup continues.")
+    except Exception as exc:
+        logger.warning("[Recon] Startup reconciliation error (non-fatal): %s", exc)
 
     yield
 
