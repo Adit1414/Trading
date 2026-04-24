@@ -30,6 +30,7 @@ class KeySubmit(BaseModel):
 
 class PaperBotResponse(BaseModel):
     id: str
+    name: str
     pair: str
     strategy: str
     pnl: float
@@ -38,6 +39,7 @@ class PaperBotResponse(BaseModel):
 
 class PaperLedgerResponse(BaseModel):
     pair: str
+    bot_name: str
     side: str
     price: float
     time: str
@@ -77,6 +79,7 @@ async def get_paper_bots(user_id: str = Depends(get_current_user)):
 
             bots.append(PaperBotResponse(
                 id=bot.id,
+                name=bot.name,
                 pair=bot.symbol,
                 strategy=strategy.name,
                 pnl=pnl,
@@ -90,23 +93,24 @@ async def get_paper_ledger(user_id: str = Depends(get_current_user)):
     """Query the PaperTradeLedgerModel for the user"""
     async with get_db() as session:
         result = await session.execute(
-            select(PaperTradeLedgerModel)
+            select(PaperTradeLedgerModel, BotModel)
             .join(BotModel, PaperTradeLedgerModel.bot_id == BotModel.id)
             .where(BotModel.user_id == user_id)
             .order_by(PaperTradeLedgerModel.timestamp.desc())
         )
-        ledger_entries = result.scalars().all()
+        rows = result.all()
 
         return [
             PaperLedgerResponse(
                 pair=entry.pair,
+                bot_name=bot.name,
                 side=entry.side,
                 price=float(entry.execution_price),
                 time=entry.timestamp.isoformat(),
                 pnl=float(entry.realized_pnl) if entry.realized_pnl is not None else 0.0,
                 isWin=bool(entry.is_win) if entry.is_win is not None else False
             )
-            for entry in ledger_entries
+            for entry, bot in rows
         ]
 
 @router.post("/keys", status_code=status.HTTP_200_OK)

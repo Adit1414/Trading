@@ -223,7 +223,9 @@ export default function BacktestDetailPage() {
           </div>
           <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
             {Object.keys(parameters).length > 0 ? (
-              Object.entries(parameters).map(([key, val]) => (
+              Object.entries(parameters)
+                .filter(([key]) => key.toLowerCase() !== 'intraday')
+                .map(([key, val]) => (
                 <div key={key} style={{ background: 'rgba(0,0,0,0.2)', padding: '14px 16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', overflow: 'hidden' }}>
                   <p style={{ fontSize: '10px', color: '#334155', letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 700, marginBottom: '6px' }}>
                     {key.replace(/_/g, ' ')}

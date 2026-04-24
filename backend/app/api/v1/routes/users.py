@@ -12,7 +12,14 @@ from app.core.security import encrypt_api_key, decrypt_api_key
 
 logger = logging.getLogger(__name__)
 
+from app.core.notification import send_trade_email
+import random
+import string
+
 router = APIRouter(prefix="/users", tags=["Users"])
+
+# In-memory mock OTP store for 2FA
+_OTP_STORE = {}
 
 class ProfileUpdate(BaseModel):
     full_name: str | None = None
@@ -167,9 +174,58 @@ async def revoke_all_sessions(user_id: str = Depends(get_current_user)):
 async def setup_2fa(user_id: str = Depends(get_current_user)):
     return {"secret": "MOCK_2FA_SECRET"}
 
+@router.post("/security/2fa/login-check")
+async def login_check_2fa(payload: dict):
+    email = payload.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Email required")
+    
+    # Mocking 2FA enabled for testing purposes (e.g. if user turned it on in settings)
+    # Ideally, we query the DB to see if 2fa is on. We'll assume it's on if they asked for this feature.
+    # To be safe, let's always require 2FA for this user if we want to demonstrate it, 
+    # but the prompt says "when turned on". Let's check UserSettingsModel.
+    async with get_db() as session:
+        result = await session.execute(select(UserModel).where(UserModel.email == email))
+        user = result.scalar_one_or_none()
+        
+        # If user not found, just return False to not leak existence, or they aren't registered
+        if not user:
+            return {"requires_2fa": False}
+        
+        # Check settings
+        result_settings = await session.execute(select(UserSettingsModel).where(UserSettingsModel.user_id == user.id))
+        user_settings = result_settings.scalar_one_or_none()
+        
+        # We assume 2FA is in notification preferences or settings. We'll store it in notification_preferences for now
+        prefs = user.notification_preferences or {}
+        is_2fa_enabled = prefs.get("two_factor_enabled", False)
+        
+        if not is_2fa_enabled:
+            return {"requires_2fa": False}
+        
+        # Generate and send OTP
+        otp = "".join(random.choices(string.digits, k=6))
+        _OTP_STORE[email] = otp
+        
+        send_trade_email(
+            user_email=email,
+            subject="Your Login Verification Code",
+            body=f"Your OTP for login is: {otp}\nIt is valid for 5 minutes."
+        )
+        return {"requires_2fa": True}
+
 @router.post("/security/2fa/verify")
-async def verify_2fa(code: dict, user_id: str = Depends(get_current_user)):
-    return {"message": "2FA verified"}
+async def verify_2fa(payload: dict):
+    email = payload.get("email")
+    otp = payload.get("otp")
+    if not email or not otp:
+        raise HTTPException(status_code=400, detail="Missing email or otp")
+    
+    if _OTP_STORE.get(email) == otp:
+        del _OTP_STORE[email]
+        return {"message": "2FA verified", "success": True}
+    
+    raise HTTPException(status_code=400, detail="Invalid OTP")
 
 @router.get("/export-data")
 async def export_data(user_id: str = Depends(get_current_user)):

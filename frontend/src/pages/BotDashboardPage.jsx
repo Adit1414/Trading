@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useBots, useUpdateBotState } from '../api/bots'
+import { useStrategies } from '../api/strategies'
 import { useAuthStore } from '../stores/authStore'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
@@ -7,7 +8,8 @@ import { Bot, Play, Pause, Square, Activity, AlertTriangle, Plus } from 'lucide-
 
 export default function BotDashboardPage() {
   const navigate = useNavigate()
-  const { data: bots = [], isLoading, isError } = useBots()
+  const { data: bots = [], isLoading: isLoadingBots, isError } = useBots()
+  const { data: strategies = [], isLoading: isLoadingStrategies } = useStrategies()
   const { mutate: updateState } = useUpdateBotState()
   const session = useAuthStore((s) => s.session)
 
@@ -83,7 +85,7 @@ export default function BotDashboardPage() {
     )
   }
 
-  if (isLoading) {
+  if (isLoadingBots || isLoadingStrategies) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', flexDirection: 'column', gap: '12px' }}>
         <div style={{ width: '32px', height: '32px', border: '2px solid rgba(129,140,248,0.2)', borderTopColor: '#818cf8', borderRadius: '50%', animation: 'spin-cw 0.8s linear infinite' }} />
@@ -163,7 +165,7 @@ export default function BotDashboardPage() {
                 <div style={{ padding: '20px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                      <span style={{ fontSize: '15px', fontWeight: 700, color: 'white' }}>{bot.symbol}</span>
+                      <span style={{ fontSize: '15px', fontWeight: 700, color: 'white' }}>{bot.name || bot.symbol}</span>
                       <span style={{
                         padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 800, letterSpacing: '0.05em',
                         background: bot.is_testnet ? 'rgba(129,140,248,0.1)' : 'rgba(244,63,94,0.1)',
@@ -189,17 +191,42 @@ export default function BotDashboardPage() {
                 </div>
 
                 {/* Card Body */}
-                <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  <div>
-                    <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, marginBottom: '4px' }}>STRATEGY</p>
-                    <p style={{ fontSize: '13px', color: 'white', fontWeight: 500 }}>{bot.strategy_id.replace(/_/g, ' ')}</p>
+                <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div>
+                      <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, marginBottom: '4px' }}>STRATEGY</p>
+                      <p style={{ fontSize: '13px', color: 'white', fontWeight: 500 }}>
+                        {strategies.find(s => s.id === bot.strategy_id)?.name || bot.strategy_id.slice(0, 8)}
+                      </p>
+                    </div>
+                    <div>
+                      <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, marginBottom: '4px' }}>RUNNING PNL</p>
+                      <p style={{ fontSize: '15px', color: pnlColor, fontWeight: 700 }}>
+                        {pnlPrefix}{pnl.toFixed(2)} USDT
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, marginBottom: '4px' }}>RUNNING PNL</p>
-                    <p style={{ fontSize: '15px', color: pnlColor, fontWeight: 700 }}>
-                      {pnlPrefix}{pnl.toFixed(2)} USDT
-                    </p>
-                  </div>
+                  
+                  {bot.parameters && Object.keys(bot.parameters).length > 0 && (
+                    <div style={{ paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                      <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, marginBottom: '8px' }}>PARAMETERS</p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {Object.entries(bot.parameters).map(([k, v]) => (
+                          <span key={k} style={{ 
+                            fontSize: '11px', 
+                            background: 'rgba(255,255,255,0.03)', 
+                            border: '1px solid rgba(255,255,255,0.05)',
+                            padding: '4px 8px', 
+                            borderRadius: '6px', 
+                            color: '#cbd5e1',
+                            fontFamily: 'monospace'
+                          }}>
+                            <span style={{ color: '#94a3b8' }}>{k}:</span> {String(v)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Card Footer Actions */}

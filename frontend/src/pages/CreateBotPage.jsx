@@ -24,6 +24,7 @@ export default function CreateBotPage() {
   const [takeProfit, setTakeProfit] = useState('')
   const [stopLoss, setStopLoss] = useState('')
   const [requiresPermission, setRequiresPermission] = useState(false)
+  const [botName, setBotName] = useState('')
 
   useEffect(() => {
     // Select first strategy initially if none selected
@@ -58,7 +59,7 @@ export default function CreateBotPage() {
     
     const selectedStrategy = strategies.find(s => s.id === strategyId)
     const payload = {
-      name: `Main Bot - ${asset} - ${selectedStrategy?.name || 'Strategy'}`,
+      name: botName.trim() || `Bot - ${asset} - ${selectedStrategy?.name || 'Strategy'}`,
       symbol: asset,
       is_testnet: isTestnet,
       strategy_id: strategyId,
@@ -142,6 +143,23 @@ export default function CreateBotPage() {
             <Settings2 size={16} style={{ color: '#818cf8' }}/> 
             Core Settings
           </h3>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px', marginBottom: '20px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#94a3b8', marginBottom: '8px' }}>Bot Name</label>
+              <input
+                type="text"
+                value={botName}
+                onChange={(e) => setBotName(e.target.value)}
+                placeholder="e.g. BTC Trend Follower"
+                style={{
+                  width: '100%', padding: '12px 14px', borderRadius: '12px',
+                  background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)',
+                  color: 'white', fontSize: '14px', outline: 'none'
+                }}
+              />
+            </div>
+          </div>
           
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: '20px' }}>
             {/* Asset */}

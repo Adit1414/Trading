@@ -46,6 +46,7 @@ export default function PaperTradingPage() {
   const [assetMode, setAssetMode] = useState('BTCUSDT');
   const [strategyId, setStrategyId] = useState('');
   const [allocation, setAllocation] = useState('1000');
+  const [botName, setBotName] = useState('');
   const [parameters, setParameters] = useState({});
   const [activeTimeframe, setActiveTimeframe] = useState('1D');
   const chartRef = useRef(null);
@@ -210,7 +211,7 @@ export default function PaperTradingPage() {
       parameters: parameters,
       take_profit: null,
       stop_loss: null,
-      name: `Paper Bot - ${assetMode} - ${selectedStrategy?.name}`
+      name: botName.trim() || `Paper Bot - ${assetMode} - ${selectedStrategy?.name}`
     };
 
     const idempotencyKey = crypto.randomUUID();
@@ -417,6 +418,19 @@ export default function PaperTradingPage() {
               <form className="grid grid-cols-1 sm:grid-cols-2 gap-[24px]" onSubmit={handleDeploy}>
                 <div className="flex flex-col gap-[12px] sm:col-span-2">
                   <label className="text-[12px] font-bold text-slate-500 uppercase tracking-widest leading-none">
+                    Bot Name
+                  </label>
+                  <input
+                    type="text"
+                    value={botName}
+                    onChange={(e) => setBotName(e.target.value)}
+                    placeholder="e.g. My Paper Bot"
+                    className="w-full h-[52px] bg-[#0a0f1c] border border-white/5 rounded-xl px-[16px] text-white text-[14px] focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-[12px] sm:col-span-2">
+                  <label className="text-[12px] font-bold text-slate-500 uppercase tracking-widest leading-none">
                     Asset Pair
                   </label>
                   <select
@@ -544,10 +558,10 @@ export default function PaperTradingPage() {
                   <div className="flex items-start justify-between gap-[16px]">
                     <div className="flex flex-col gap-[4px]">
                       <div className="font-bold text-white text-[16px] leading-none">
-                        {bot.pair}
+                        {bot.name || bot.pair}
                       </div>
                       <div className="text-[12px] text-slate-500 font-bold uppercase tracking-wider leading-none">
-                        {bot.strategy}
+                        {bot.pair} • {bot.strategy}
                       </div>
                     </div>
                     <button className="w-[24px] h-[24px] rounded-md bg-[#1e293b] hover:bg-slate-700 flex items-center justify-center transition-colors shrink-0">
@@ -584,6 +598,7 @@ export default function PaperTradingPage() {
               <thead>
                 <tr>
                   <th className="px-[24px] py-[16px] text-[12px] font-bold text-slate-500 uppercase tracking-wider border-b border-white/5">Asset Pair</th>
+                  <th className="px-[24px] py-[16px] text-[12px] font-bold text-slate-500 uppercase tracking-wider border-b border-white/5">Bot Name</th>
                   <th className="px-[24px] py-[16px] text-[12px] font-bold text-slate-500 uppercase tracking-wider border-b border-white/5">Side</th>
                   <th className="px-[24px] py-[16px] text-[12px] font-bold text-slate-500 uppercase tracking-wider border-b border-white/5">Fill Price</th>
                   <th className="px-[24px] py-[16px] text-[12px] font-bold text-slate-500 uppercase tracking-wider border-b border-white/5">Time</th>
@@ -595,6 +610,9 @@ export default function PaperTradingPage() {
                   <tr key={i} className="hover:bg-white/[0.02] transition-colors">
                     <td className="px-[24px] py-[16px] text-[14px] font-bold text-white">
                       {trade.pair}
+                    </td>
+                    <td className="px-[24px] py-[16px] text-[14px] text-slate-300 font-medium">
+                      {trade.bot_name || "Manual Trade"}
                     </td>
                     <td className="px-[24px] py-[16px]">
                       <span

@@ -65,7 +65,6 @@ export default function BacktestForm({ onClose }) {
   const [orderSizeMode, setOrderSizeMode] = useState('PCT_EQUITY')
   const [orderSizePct,  setOrderSizePct]  = useState(100)
   const [orderSizeUsdt, setOrderSizeUsdt] = useState(10)
-  const [intraday,      setIntraday]      = useState(false)
   const [startDate,     setStartDate]     = useState('2024-01-01')
   const [endDate,       setEndDate]       = useState('2024-06-30')
   const [tradingMarket, setTradingMarket] = useState('BINANCE')
@@ -163,7 +162,7 @@ export default function BacktestForm({ onClose }) {
       interval, initial_cash: Number(initialCash),
       commission: Number(commission), slippage: Number(slippage),
       order_size_mode: orderSizeMode, order_size_pct: Number(orderSizePct),
-      intraday, start_date: startDate, end_date: endDate,
+      start_date: startDate, end_date: endDate,
     }
     if (orderSizeMode === 'FIXED_USDT') payload.order_size_usdt = Number(orderSizeUsdt)
     runBacktest.mutate(payload, {
@@ -210,7 +209,7 @@ export default function BacktestForm({ onClose }) {
         <form onSubmit={handleSubmit} style={{ padding:'24px 28px', display:'flex', flexDirection:'column', gap:'20px' }}>
 
           {/* Row 1: Strategy + Config */}
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'16px' }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr', gap:'16px' }}>
             <Field label={`Strategy ${strategies?.length ? `· ${strategies.length} available` : ''}`}>
               {strategiesLoading
                 ? <div style={{ ...S.input, color:'#475569' }}>Loading strategies…</div>
@@ -219,12 +218,6 @@ export default function BacktestForm({ onClose }) {
                     {strategies?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </StyledSelect>
               }
-            </Field>
-            <Field label="Strategy Configuration">
-              <StyledSelect>
-                <option value="">Select configuration</option>
-                <option value="custom">Custom (Below)</option>
-              </StyledSelect>
             </Field>
           </div>
 
@@ -312,37 +305,7 @@ export default function BacktestForm({ onClose }) {
             </Field>
           </div>
 
-          {/* Intraday toggle */}
-          <div
-            onClick={() => setIntraday(!intraday)}
-            style={{
-              display:'flex', alignItems:'center', justifyContent:'space-between',
-              padding:'14px 16px', borderRadius:'12px', cursor:'pointer',
-              background:'rgba(0,0,0,0.2)', border:'1px solid rgba(255,255,255,0.06)',
-              transition:'border-color 0.2s',
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.borderColor='rgba(255,255,255,0.1)' }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor='rgba(255,255,255,0.06)' }}
-          >
-            <div>
-              <p style={{ fontSize:'13px', fontWeight:600, color:'white', marginBottom:'2px' }}>Intraday Trading</p>
-              <p style={{ fontSize:'11px', color:'#475569' }}>Enable for same-day open/close trades only</p>
-            </div>
-            {/* Toggle pill */}
-            <div style={{
-              width:'44px', height:'24px', borderRadius:'12px', padding:'2px',
-              display:'flex', alignItems:'center', transition:'background 0.25s',
-              background: intraday ? '#818cf8' : '#1e293b',
-              flexShrink:0, marginLeft:'16px',
-            }}>
-              <div style={{
-                width:'20px', height:'20px', borderRadius:'50%', background:'white',
-                boxShadow:'0 1px 4px rgba(0,0,0,0.3)',
-                transition:'transform 0.25s cubic-bezier(0.4,0,0.2,1)',
-                transform: intraday ? 'translateX(20px)' : 'translateX(0)',
-              }} />
-            </div>
-          </div>
+
 
           {/* Footer actions */}
           <div style={{ display:'flex', justifyContent:'flex-end', alignItems:'center', gap:'12px', paddingTop:'4px', borderTop:'1px solid rgba(255,255,255,0.05)' }}>

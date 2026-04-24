@@ -188,9 +188,6 @@ export default function Layout() {
             </div>
             {/* Info */}
             <div className="flex-1 min-w-0">
-              <p style={{ fontSize: '12px', fontWeight: 600, color: 'white' }} className="truncate">
-                {user?.email || 'Guest'}
-              </p>
               <p style={{ fontSize: '10px', color: '#475569' }}>Pro Plan</p>
             </div>
             {/* Logout */}
@@ -287,12 +284,7 @@ export default function Layout() {
                 {user?.email?.[0]?.toUpperCase() || 'G'}
               </span>
             </div>
-            <span
-              className="hidden md:block truncate"
-              style={{ fontSize: '13px', color: '#94a3b8', maxWidth: '130px', fontWeight: 500 }}
-            >
-              {user?.email || 'Guest'}
-            </span>
+
           </button>
         </header>
 
