@@ -10,6 +10,7 @@ from app.api.v1.routes import strategies_db
 from app.api.v1.routes import bots
 from app.api.v1.routes import paper
 from app.api.v1.routes import live_trading
+from app.api.v1.routes import users
 
 api_router = APIRouter()
 api_router.include_router(backtest.router)
@@ -18,3 +19,4 @@ api_router.include_router(strategies_db.router)
 api_router.include_router(bots.router)
 api_router.include_router(paper.router)
 api_router.include_router(live_trading.router)
+api_router.include_router(users.router)

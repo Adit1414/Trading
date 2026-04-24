@@ -68,8 +68,8 @@ class Settings(BaseSettings):
 
     SMTP_SERVER: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
-    SENDER_EMAIL: str
-    SENDER_PASSWORD: str
+    SENDER_EMAIL: Optional[str] = None
+    SENDER_PASSWORD: Optional[str] = None
     FRONTEND_URL: str = "http://localhost:5173"
     
     # ── CORS ─────────────────────────────────────────────────────────────────

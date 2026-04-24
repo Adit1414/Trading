@@ -56,15 +56,12 @@ export default function PaperTradingPage() {
   
   const { data: strategiesData = [] } = useStrategies();
   const { mutate: createBot, isPending: isDeploying } = useCreateBot();
-  const { mutate: submitKeys, isPending: isSubmittingKeys } = useSubmitPaperKeys();
   const { mutate: revokeKeys, isPending: isRevokingKeys } = useRevokePaperKeys();
 
   const session = useAuthStore((s) => s.session);
   const queryClient = useQueryClient();
 
-  const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState('');
-  const [apiSecretInput, setApiSecretInput] = useState('');
+  const navigate = window.location.assign; // We will just use standard anchor/link or useNavigate. Wait, I should import useNavigate from react-router-dom!
 
   // We infer lack of keys if portfolio returns an error (404)
   const hasKeys = !portfolioError && portfolioData && !loadingPortfolio;
@@ -208,21 +205,7 @@ export default function PaperTradingPage() {
     });
   };
 
-  const handleKeySubmit = (e) => {
-    e.preventDefault();
-    if (!apiKeyInput || !apiSecretInput) return toast.error('Please fill in both fields');
-    submitKeys({ api_key: apiKeyInput, secret: apiSecretInput }, {
-      onSuccess: () => {
-        toast.success('Testnet Keys saved successfully!');
-        setIsKeyModalOpen(false);
-        setApiKeyInput('');
-        setApiSecretInput('');
-      },
-      onError: (err) => {
-        toast.error(err.response?.data?.detail || 'Failed to verify keys');
-      }
-    });
-  };
+
 
   const handleKeyRevoke = () => {
     if (window.confirm("Are you sure you want to disconnect your Binance Testnet keys?")) {
@@ -268,13 +251,13 @@ export default function PaperTradingPage() {
                 {isRevokingKeys ? 'Disconnecting...' : 'Disconnect Keys'}
               </button>
             ) : (
-               <button 
-                onClick={() => setIsKeyModalOpen(true)}
+               <a 
+                href="/settings"
                 className="flex items-center justify-center gap-[8px] px-[16px] py-[10px] rounded-xl border border-blue-500/20 bg-blue-500/10 hover:bg-blue-500/20 transition-all font-medium text-[14px] text-blue-400"
               >
                 <Key className="w-[16px] h-[16px] text-blue-400" />
-                Connect Keys
-              </button>
+                Configure Keys in Settings
+              </a>
             )}
 
             <button className="flex items-center justify-center gap-[8px] px-[16px] py-[10px] rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all font-medium text-[14px] text-slate-300">
@@ -578,74 +561,7 @@ export default function PaperTradingPage() {
 
       </div>
 
-      {/* MODAL OVERLAY */}
-      {isKeyModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-[24px]">
-          {/* Backdrop */}
-          <div 
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={() => setIsKeyModalOpen(false)}
-          />
 
-          {/* Modal Content */}
-          <div className="relative bg-[#0f1729] border border-white/10 rounded-2xl p-[32px] w-full max-w-[480px] flex flex-col gap-[24px] shadow-2xl">
-            <div className="flex items-center justify-between">
-              <h2 className="text-[20px] font-bold text-white flex items-center gap-[12px]">
-                <Key className="w-[20px] h-[20px] text-blue-400" />
-                Connect Testnet Keys
-              </h2>
-              <button 
-                onClick={() => setIsKeyModalOpen(false)}
-                className="w-[32px] h-[32px] rounded-full hover:bg-white/5 flex items-center justify-center transition-colors"
-              >
-                <X className="w-[16px] h-[16px] text-slate-400" />
-              </button>
-            </div>
-
-            <p className="text-[14px] text-slate-400">
-              Paste your Binance Spot Testnet API credentials below. They are encrypted symmetrically at rest on our secure servers.
-            </p>
-
-            <form onSubmit={handleKeySubmit} className="flex flex-col gap-[20px]">
-              <div className="flex flex-col gap-[12px]">
-                <label className="text-[12px] font-bold text-slate-500 uppercase tracking-widest leading-none">
-                  API Key
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={apiKeyInput}
-                  onChange={(e) => setApiKeyInput(e.target.value)}
-                  placeholder="Paste testnet API key..."
-                  className="w-full h-[52px] bg-[#0a0f1c] border border-white/5 rounded-xl px-[16px] text-white text-[14px] focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div className="flex flex-col gap-[12px]">
-                <label className="text-[12px] font-bold text-slate-500 uppercase tracking-widest leading-none">
-                  Secret Key
-                </label>
-                <input
-                  type="password"
-                  required
-                  value={apiSecretInput}
-                  onChange={(e) => setApiSecretInput(e.target.value)}
-                  placeholder="Paste testnet secret key..."
-                  className="w-full h-[52px] bg-[#0a0f1c] border border-white/5 rounded-xl px-[16px] text-white text-[14px] focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <button 
-                type="submit" 
-                disabled={isSubmittingKeys}
-                className="w-full h-[56px] rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-[14px] transition-colors mt-[8px]"
-              >
-                {isSubmittingKeys ? 'Verifying & Saving...' : 'Securely Save Keys'}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
 
     </div>
   );

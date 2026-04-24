@@ -79,3 +79,13 @@ export async function deleteUserAccount() {
   const { data } = await api.delete('/users/account')
   return data
 }
+
+export async function getBinanceSettings() {
+  const { data } = await withRetry(() => api.get('/users/settings/binance'))
+  return data
+}
+
+export async function saveBinanceSettings(payload) {
+  const { data } = await api.post('/users/settings/binance', payload)
+  return data
+}

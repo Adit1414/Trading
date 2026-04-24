@@ -23,6 +23,8 @@ import {
   updateNotificationPreferences,
   updateProfile,
   updateTradingPreferences,
+  getBinanceSettings,
+  saveBinanceSettings,
 } from '../api/settings'
 
 /* ── Section IDs ────────────────────────────────────────────────── */

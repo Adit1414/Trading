@@ -18,7 +18,7 @@ from sqlalchemy.orm import selectinload
 from app.core.auth import get_current_user
 from app.db.session import get_db
 from app.core.security import encrypt_api_key, decrypt_api_key
-from app.db.models import BotModel, PaperTradeLedgerModel, ApiKeyModel, StrategyModel, PortfolioHistoryModel
+from app.db.models import BotModel, PaperTradeLedgerModel, ApiKeyModel, StrategyModel, PortfolioHistoryModel, UserSettingsModel
 from app.services.market_data.binance import get_binance_testnet_client
 import ccxt.async_support as ccxt
 
@@ -116,25 +116,33 @@ async def submit_paper_keys(body: KeySubmit, user_id: str = Depends(get_current_
     try:
         await exchange.fetch_balance()
     except Exception as e:
-        await exchange.close()
+        try:
+            await exchange.close()
+        except Exception:
+            pass
         raise HTTPException(status_code=400, detail=f"Invalid testnet keys: {str(e)}")
-    await exchange.close()
+    
+    try:
+        await exchange.close()
+    except Exception:
+        pass
 
+    # We no longer use submit_paper_keys since the modal is removed, but keep it just in case.
     async with get_db() as session:
-        result = await session.execute(select(ApiKeyModel).where(ApiKeyModel.user_id == user_id))
+        result = await session.execute(select(UserSettingsModel).where(UserSettingsModel.user_id == user_id))
         existing_key = result.scalar_one_or_none()
 
         enc_key = encrypt_api_key(body.api_key)
         enc_secret = encrypt_api_key(body.secret)
 
         if existing_key:
-            existing_key.binance_testnet_api_key = enc_key
-            existing_key.binance_testnet_secret = enc_secret
+            existing_key.binance_api_key = enc_key
+            existing_key.binance_secret = enc_secret
         else:
-            new_key = ApiKeyModel(
+            new_key = UserSettingsModel(
                 user_id=user_id,
-                binance_testnet_api_key=enc_key,
-                binance_testnet_secret=enc_secret
+                binance_api_key=enc_key,
+                binance_secret=enc_secret
             )
             session.add(new_key)
         await session.commit()
@@ -144,11 +152,12 @@ async def submit_paper_keys(body: KeySubmit, user_id: str = Depends(get_current_
 async def revoke_paper_keys(user_id: str = Depends(get_current_user)):
     """Delete the user's paper trading API keys"""
     async with get_db() as session:
-        result = await session.execute(select(ApiKeyModel).where(ApiKeyModel.user_id == user_id))
+        result = await session.execute(select(UserSettingsModel).where(UserSettingsModel.user_id == user_id))
         existing_key = result.scalar_one_or_none()
         
         if existing_key:
-            await session.delete(existing_key)
+            existing_key.binance_api_key = None
+            existing_key.binance_secret = None
             await session.commit()
             
     return {"message": "Keys revoked successfully"}
@@ -165,16 +174,16 @@ async def get_paper_portfolio(
     DB-only snapshot data so the endpoint never returns 500.
     """
     async with get_db() as session:
-        result = await session.execute(select(ApiKeyModel).where(ApiKeyModel.user_id == user_id))
+        result = await session.execute(select(UserSettingsModel).where(UserSettingsModel.user_id == user_id))
         api_key = result.scalar_one_or_none()
-
-    if not api_key:
+        
+    if not api_key or not api_key.binance_api_key or not api_key.binance_secret:
         raise HTTPException(status_code=404, detail="No paper trading keys found")
 
     # ── Attempt live balance (non-fatal) ─────────────────────────────────────
     tot_usdt: float | None = None
-    dec_key = decrypt_api_key(api_key.binance_testnet_api_key)
-    dec_secret = decrypt_api_key(api_key.binance_testnet_secret)
+    dec_key = decrypt_api_key(api_key.binance_api_key)
+    dec_secret = decrypt_api_key(api_key.binance_secret)
     exchange = get_binance_testnet_client(dec_key, dec_secret)
     try:
         balance = await exchange.fetch_balance()
@@ -229,5 +238,11 @@ async def get_paper_portfolio(
     # the chart component never receives an empty array.
     if not data:
         data.append({"name": now.strftime(time_fmt), "equity": 0.0})
+
+    # Ensure Recharts has at least 2 points to draw an Area chart
+    if len(data) == 1:
+        first_copy = data[0].copy()
+        first_copy["name"] = "Start"
+        data.insert(0, first_copy)
 
     return data

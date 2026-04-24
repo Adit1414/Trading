@@ -259,12 +259,23 @@ def _run_backtest_sync(df: pd.DataFrame, strategy_class, req: BacktestRunRequest
             return _orig_df_resample(self, rule, *args, **kwargs)
         pd.DataFrame.resample = _patched_df_resample
         
+        # Temp patch for bokeh >= 3.0 string vs list format in backtesting.py
+        import bokeh.models.formatters
+        _orig_formatter_init = bokeh.models.formatters.DatetimeTickFormatter.__init__
+        def _patched_formatter_init(self, *args, **kwargs):
+            for k, v in kwargs.items():
+                if isinstance(v, list) and len(v) > 0 and isinstance(v[0], str):
+                    kwargs[k] = v[0]
+            _orig_formatter_init(self, *args, **kwargs)
+        bokeh.models.formatters.DatetimeTickFormatter.__init__ = _patched_formatter_init
+
         try:
             # Generate bokeh interactive chart
             # this will write full HTML to the file path specified.
             bt.plot(filename=chart_path, open_browser=False, resample=False)
         finally:
             pd.DataFrame.resample = _orig_df_resample
+            bokeh.models.formatters.DatetimeTickFormatter.__init__ = _orig_formatter_init
             
         with open(chart_path, "r", encoding="utf-8") as f:
             chart_html = f.read()
