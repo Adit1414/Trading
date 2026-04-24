@@ -159,13 +159,16 @@ export default function BotDashboardPage() {
               <div key={bot.id} style={{
                 background: 'linear-gradient(145deg,#131b2f,#0f1729)', border: '1px solid rgba(255,255,255,0.06)', 
                 borderRadius: '20px', overflow: 'hidden', boxShadow: '0 4px 24px rgba(0,0,0,0.25)',
-                opacity: isStopped ? 0.6 : 1, transition: 'opacity 0.2s'
+                opacity: isStopped ? 0.6 : 1, transition: 'opacity 0.2s',
+                display: 'flex', flexDirection: 'column'
               }}>
                 {/* Card Header */}
                 <div style={{ padding: '20px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                      <span style={{ fontSize: '15px', fontWeight: 700, color: 'white' }}>{bot.name || bot.symbol}</span>
+                      <span style={{ fontSize: '16px', fontWeight: 700, color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '160px' }} title={bot.name || `${bot.symbol} Bot`}>
+                        {bot.name || `${bot.symbol} Bot`}
+                      </span>
                       <span style={{
                         padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 800, letterSpacing: '0.05em',
                         background: bot.is_testnet ? 'rgba(129,140,248,0.1)' : 'rgba(244,63,94,0.1)',
@@ -175,7 +178,9 @@ export default function BotDashboardPage() {
                         {bot.is_testnet ? 'TESTNET' : 'MAINNET'}
                       </span>
                     </div>
-                    <p style={{ fontSize: '11px', color: '#64748b', fontFamily: 'monospace' }}>ID: {bot.id.slice(0,8)}</p>
+                    <p style={{ fontSize: '11px', color: '#64748b', fontFamily: 'monospace' }}>
+                      <span style={{ fontWeight: 700, color: '#94a3b8' }}>{bot.symbol}</span> • ID: {bot.id.slice(0,8)}
+                    </p>
                   </div>
 
                   <span style={{
@@ -191,7 +196,7 @@ export default function BotDashboardPage() {
                 </div>
 
                 {/* Card Body */}
-                <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', flex: 1 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                     <div>
                       <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, marginBottom: '4px' }}>STRATEGY</p>

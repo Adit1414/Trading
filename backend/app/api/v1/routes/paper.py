@@ -36,6 +36,7 @@ class PaperBotResponse(BaseModel):
     pnl: float
     isWin: bool
     uptime: str
+    status: str
 
 class PaperLedgerResponse(BaseModel):
     pair: str
@@ -84,7 +85,8 @@ async def get_paper_bots(user_id: str = Depends(get_current_user)):
                 strategy=strategy.name,
                 pnl=pnl,
                 isWin=(pnl >= 0),
-                uptime=uptime
+                uptime=uptime,
+                status=bot.status
             ))
         return bots
 

@@ -82,6 +82,7 @@ class BotResponse(BaseModel):
     All derived/mapped fields are computed in `_to_response()`.
     """
     id:          str
+    name:        str
     symbol:      str
     is_testnet:  bool
     strategy_id: str
@@ -117,6 +118,7 @@ def _to_response(bot: BotModel) -> BotResponse:
 
     return BotResponse(
         id=bot.id,
+        name=bot.name,
         symbol=bot.symbol,
         is_testnet=(bot.environment == "TESTNET"),
         strategy_id=bot.strategy_id,

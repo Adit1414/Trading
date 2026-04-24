@@ -12,6 +12,8 @@ import {
   DollarSign,
   Key,
   X,
+  Pause,
+  Square
 } from 'lucide-react';
 import {
   AreaChart,
@@ -25,7 +27,7 @@ import {
 
 import { usePaperBots, usePaperLedger, usePaperPortfolio, useSubmitPaperKeys, useRevokePaperKeys } from '../api/paper';
 import { useStrategies } from '../api/strategies';
-import { useCreateBot } from '../api/bots';
+import { useCreateBot, useUpdateBotState } from '../api/bots';
 import { useAuthStore } from '../stores/authStore';
 import { useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -58,6 +60,7 @@ export default function PaperTradingPage() {
   
   const { data: strategiesData = [] } = useStrategies();
   const { mutate: createBot, isPending: isDeploying } = useCreateBot();
+  const { mutate: updateState } = useUpdateBotState();
   const { mutate: revokeKeys, isPending: isRevokingKeys } = useRevokePaperKeys();
 
   const session = useAuthStore((s) => s.session);
@@ -238,9 +241,33 @@ export default function PaperTradingPage() {
     }
   };
 
+  const handleToggleState = (bot) => {
+    const targetState = bot.status === 'RUNNING' ? 'PAUSED' : 'RUNNING';
+    const idempotencyKey = crypto.randomUUID();
+    updateState(
+      { botId: bot.id, targetState, idempotencyKey },
+      {
+        onSuccess: () => toast.success(`Bot ${targetState === 'RUNNING' ? 'started' : 'paused'}.`),
+        onError: () => toast.error('Failed to update bot state.')
+      }
+    );
+  };
+
+  const handleStopBot = (bot) => {
+    if (!window.confirm(`Are you sure you want to stop bot ${bot.id.slice(0, 8)}? It cannot be restarted.`)) return;
+    const idempotencyKey = crypto.randomUUID();
+    updateState(
+      { botId: bot.id, targetState: 'STOPPED', idempotencyKey },
+      {
+        onSuccess: () => toast.success('Bot stopped permanently.'),
+        onError: () => toast.error('Failed to stop bot.')
+      }
+    );
+  };
+
   return (
-    <div className="min-h-screen bg-[#0f1729] text-white font-sans selection:bg-blue-500/30">
-      <div className="max-w-[1400px] mx-auto px-[24px] py-[32px] md:px-[32px] md:py-[40px] flex flex-col gap-[32px]">
+    <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px 28px' }}>
+      <div className="flex flex-col gap-[32px]">
 
         {/* HEADER */}
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-[24px]">
@@ -249,9 +276,9 @@ export default function PaperTradingPage() {
               <h1 className="text-[32px] font-bold text-white tracking-tight leading-none">
                 Paper Trading Lab
               </h1>
-              <div className="flex items-center gap-[8px] px-[12px] py-[6px] rounded-full border border-amber-500/30 bg-[#0f1729]">
-                <AlertTriangle className="w-[16px] h-[16px] text-amber-500" />
-                <span className="text-[12px] font-bold text-amber-500 tracking-wider uppercase leading-none">
+              <div className="flex items-center gap-[6px] px-[10px] py-[4px] rounded-md border border-amber-500/30 bg-amber-500/10 mb-[2px]">
+                <AlertTriangle className="w-[14px] h-[14px] text-amber-500" />
+                <span className="text-[11px] font-bold text-amber-500 tracking-widest uppercase mt-[1px]">
                   Simulation Mode Active
                 </span>
               </div>
@@ -266,23 +293,23 @@ export default function PaperTradingPage() {
               <button 
                 onClick={handleKeyRevoke}
                 disabled={isRevokingKeys}
-                className="flex items-center justify-center gap-[8px] px-[16px] py-[10px] rounded-xl border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 transition-all font-medium text-[14px] text-rose-400"
+                className="flex items-center justify-center gap-[6px] px-[12px] py-[8px] rounded-lg border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 transition-all font-medium text-[13px] text-rose-400 whitespace-nowrap"
               >
-                <Key className="w-[16px] h-[16px] text-rose-400" />
+                <Key className="w-[14px] h-[14px] text-rose-400" />
                 {isRevokingKeys ? 'Disconnecting...' : 'Disconnect Keys'}
               </button>
             ) : (
                <a 
                 href="/settings"
-                className="flex items-center justify-center gap-[8px] px-[16px] py-[10px] rounded-xl border border-blue-500/20 bg-blue-500/10 hover:bg-blue-500/20 transition-all font-medium text-[14px] text-blue-400"
+                className="flex items-center justify-center gap-[6px] px-[12px] py-[8px] rounded-lg border border-blue-500/20 bg-blue-500/10 hover:bg-blue-500/20 transition-all font-medium text-[13px] text-blue-400 whitespace-nowrap"
               >
-                <Key className="w-[16px] h-[16px] text-blue-400" />
+                <Key className="w-[14px] h-[14px] text-blue-400" />
                 Configure Keys in Settings
               </a>
             )}
 
-            <button className="flex items-center justify-center gap-[8px] px-[16px] py-[10px] rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all font-medium text-[14px] text-slate-300">
-              <RotateCcw className="w-[16px] h-[16px] text-slate-400" />
+            <button className="flex items-center justify-center gap-[6px] px-[12px] py-[8px] rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 transition-all font-medium text-[13px] text-slate-300 whitespace-nowrap">
+              <RotateCcw className="w-[14px] h-[14px] text-slate-400" />
               Reset Virtual Balance
             </button>
           </div>
@@ -291,7 +318,7 @@ export default function PaperTradingPage() {
         {/* KPI METRICS */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-[24px]">
           
-          <div className="p-[24px] rounded-2xl bg-[#131b2f] border border-white/5 flex flex-col gap-[24px] justify-between">
+          <div className="flex flex-col gap-[24px] justify-between" style={{ background: 'linear-gradient(145deg, #131b2f 0%, #0f1729 100%)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '24px', boxShadow: '0 4px 24px rgba(0,0,0,0.25)' }}>
             <div className="flex items-center justify-between">
               <span className="text-[12px] font-bold text-slate-500 uppercase tracking-widest leading-none">
                 Virtual Balance
@@ -310,7 +337,7 @@ export default function PaperTradingPage() {
             </div>
           </div>
 
-          <div className="p-[24px] rounded-2xl bg-[#131b2f] border border-white/5 flex flex-col gap-[24px] justify-between">
+          <div className="flex flex-col gap-[24px] justify-between" style={{ background: 'linear-gradient(145deg, #131b2f 0%, #0f1729 100%)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '24px', boxShadow: '0 4px 24px rgba(0,0,0,0.25)' }}>
              <div className="flex items-center justify-between">
               <span className="text-[12px] font-bold text-slate-500 uppercase tracking-widest leading-none">
                 Simulated PnL (24h)
@@ -329,7 +356,7 @@ export default function PaperTradingPage() {
             </div>
           </div>
 
-          <div className="p-[24px] rounded-2xl bg-[#131b2f] border border-white/5 flex flex-col gap-[24px] justify-between">
+          <div className="flex flex-col gap-[24px] justify-between" style={{ background: 'linear-gradient(145deg, #131b2f 0%, #0f1729 100%)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '24px', boxShadow: '0 4px 24px rgba(0,0,0,0.25)' }}>
             <div className="flex items-center justify-between">
               <span className="text-[12px] font-bold text-slate-500 uppercase tracking-widest leading-none">
                 Active Paper Bots
@@ -348,7 +375,7 @@ export default function PaperTradingPage() {
             </div>
           </div>
 
-          <div className="p-[24px] rounded-2xl bg-[#131b2f] border border-white/5 flex flex-col gap-[24px] justify-between">
+          <div className="flex flex-col gap-[24px] justify-between" style={{ background: 'linear-gradient(145deg, #131b2f 0%, #0f1729 100%)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '24px', boxShadow: '0 4px 24px rgba(0,0,0,0.25)' }}>
             <div className="flex items-center justify-between">
               <span className="text-[12px] font-bold text-slate-500 uppercase tracking-widest leading-none">
                 Global Win Rate
@@ -375,7 +402,7 @@ export default function PaperTradingPage() {
 
         </div>
 
-        <div className="w-full bg-[#131b2f] border border-white/5 rounded-2xl p-[24px]">
+        <div className="w-full" style={{ background: 'linear-gradient(145deg, #131b2f 0%, #0f1729 100%)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '24px', boxShadow: '0 4px 24px rgba(0,0,0,0.25)' }}>
           <h2 className="text-[16px] font-bold text-slate-300 tracking-wide mb-[16px]">
             Live Market View ({assetMode})
           </h2>
@@ -409,15 +436,15 @@ export default function PaperTradingPage() {
             />
 
             {/* Deploy Bot Form */}
-            <div className="bg-[#131b2f] border border-white/5 rounded-2xl p-[24px] flex flex-col gap-[32px]">
+            <div className="flex flex-col gap-[32px]" style={{ background: 'linear-gradient(145deg, #131b2f 0%, #0f1729 100%)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '24px', boxShadow: '0 4px 24px rgba(0,0,0,0.25)' }}>
               <h3 className="text-[18px] font-bold text-white flex items-center gap-[8px] leading-none">
                  <Play className="w-[20px] h-[20px] text-blue-400" />
                  Deploy Virtual Bot
               </h3>
 
               <form className="grid grid-cols-1 sm:grid-cols-2 gap-[24px]" onSubmit={handleDeploy}>
-                <div className="flex flex-col gap-[12px] sm:col-span-2">
-                  <label className="text-[12px] font-bold text-slate-500 uppercase tracking-widest leading-none">
+                <div className="flex flex-col gap-[8px] sm:col-span-2">
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest leading-none ml-1" style={{ marginLeft: '4px' }}>
                     Bot Name
                   </label>
                   <input
@@ -425,18 +452,20 @@ export default function PaperTradingPage() {
                     value={botName}
                     onChange={(e) => setBotName(e.target.value)}
                     placeholder="e.g. My Paper Bot"
-                    className="w-full h-[52px] bg-[#0a0f1c] border border-white/5 rounded-xl px-[16px] text-white text-[14px] focus:outline-none focus:border-blue-500"
+                    className="w-full h-14 bg-[#0a0f1c] border border-white/5 rounded-xl px-4 text-white text-[14px] focus:outline-none focus:border-blue-500"
+                    style={{ paddingLeft: '16px', paddingRight: '16px', height: '52px' }}
                   />
                 </div>
 
-                <div className="flex flex-col gap-[12px] sm:col-span-2">
-                  <label className="text-[12px] font-bold text-slate-500 uppercase tracking-widest leading-none">
+                <div className="flex flex-col gap-[8px] sm:col-span-2">
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest leading-none ml-1" style={{ marginLeft: '4px' }}>
                     Asset Pair
                   </label>
                   <select
                     value={assetMode}
                     onChange={(e) => setAssetMode(e.target.value)}
-                    className="w-full h-[52px] bg-[#0a0f1c] border border-white/5 rounded-xl px-[16px] text-white text-[14px] focus:outline-none focus:border-blue-500 appearance-none cursor-pointer"
+                    className="w-full h-14 bg-[#0a0f1c] border border-white/5 rounded-xl px-4 text-white text-[14px] focus:outline-none focus:border-blue-500 appearance-none cursor-pointer"
+                    style={{ paddingLeft: '16px', paddingRight: '16px', height: '52px' }}
                   >
                     <option value="BTCUSDT">BTC/USDT</option>
                     <option value="ETHUSDT">ETH/USDT</option>
@@ -444,15 +473,18 @@ export default function PaperTradingPage() {
                   </select>
                 </div>
 
-                <div className="flex flex-col gap-[12px]">
-                  <label className="text-[12px] font-bold text-slate-500 uppercase tracking-widest leading-none">
+                <div className="flex flex-col gap-[8px]">
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest leading-none ml-1" style={{ marginLeft: '4px' }}>
                     Select Strategy
                   </label>
                   <select
                     value={strategyId}
                     onChange={(e) => setStrategyId(e.target.value)}
-                    className="w-full h-[52px] bg-[#0a0f1c] border border-white/5 rounded-xl px-[16px] text-white text-[14px] focus:outline-none focus:border-blue-500 appearance-none cursor-pointer"
+                    className="w-full h-14 bg-[#0a0f1c] border border-white/5 rounded-xl px-4 text-white text-[14px] focus:outline-none focus:border-blue-500 appearance-none cursor-pointer"
                     style={{
+                        paddingLeft: '16px',
+                        paddingRight: '16px',
+                        height: '52px',
                         backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%23475569' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
                         backgroundPosition: 'right 16px center',
                         backgroundRepeat: 'no-repeat',
@@ -465,45 +497,49 @@ export default function PaperTradingPage() {
                   </select>
                 </div>
 
-                <div className="flex flex-col gap-[12px]">
-                  <label className="text-[12px] font-bold text-slate-500 uppercase tracking-widest leading-none">
+                <div className="flex flex-col gap-[8px]">
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest leading-none ml-1" style={{ marginLeft: '4px' }}>
                     Virtual Allocation ($)
                   </label>
-                  <div className="relative h-[52px]">
-                    <div className="absolute inset-y-0 left-0 pl-[16px] flex items-center pointer-events-none">
+                  <div className="relative h-14" style={{ height: '52px' }}>
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none" style={{ paddingLeft: '16px' }}>
                       <span className="text-slate-500 text-[14px] font-bold">$</span>
                     </div>
                     <input
                       type="number"
                       value={allocation}
                       onChange={(e) => setAllocation(e.target.value)}
-                      className="w-full h-full bg-[#0a0f1c] border border-white/5 rounded-xl pl-[32px] pr-[16px] text-white text-[14px] focus:outline-none focus:border-blue-500"
+                      className="w-full h-full bg-[#0a0f1c] border border-white/5 rounded-xl pl-10 pr-4 text-white text-[14px] focus:outline-none focus:border-blue-500"
+                      style={{ paddingLeft: '36px', paddingRight: '16px' }}
                     />
                   </div>
                 </div>
 
                 {/* Dynamic Parameters */}
                 {Object.keys(parameters).length > 0 && (
-                  <div className="sm:col-span-2 pt-[24px] border-t border-white/5 mt-[8px]">
-                    <label className="text-[12px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-[16px] block">
+                  <div className="sm:col-span-2 pt-6 border-t border-white/5 mt-2" style={{ paddingTop: '24px', marginTop: '8px' }}>
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-4 block ml-1" style={{ marginBottom: '16px', marginLeft: '4px' }}>
                       Strategy Parameters
                     </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-[16px]">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" style={{ gap: '16px' }}>
                       {Object.entries(parameters).map(([key, val]) => {
                         const schema = strategiesData.find(s => s.id === strategyId)?.parameter_schema?.properties?.[key];
                         const isEnum = schema?.enum;
                         
                         return (
-                          <div key={key} className="flex flex-col gap-[8px]">
-                            <span className="text-[11px] text-slate-500 uppercase tracking-widest leading-none">
+                          <div key={key} className="flex flex-col gap-2" style={{ gap: '8px' }}>
+                            <span className="text-[11px] text-slate-500 uppercase tracking-widest leading-none ml-1" style={{ marginLeft: '4px' }}>
                               {key.replace(/_/g, ' ')}
                             </span>
                             {isEnum ? (
                               <select
                                 value={val}
                                 onChange={(e) => handleParamChange(key, e.target.value, schema.type)}
-                                className="w-full h-[48px] bg-[#0a0f1c] border border-white/5 rounded-xl px-[16px] text-white text-[14px] focus:outline-none focus:border-blue-500 appearance-none cursor-pointer"
+                                className="w-full h-12 bg-[#0a0f1c] border border-white/5 rounded-xl px-4 text-white text-[14px] focus:outline-none focus:border-blue-500 appearance-none cursor-pointer"
                                 style={{
+                                    paddingLeft: '16px',
+                                    paddingRight: '16px',
+                                    height: '48px',
                                     backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%23475569' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
                                     backgroundPosition: 'right 16px center',
                                     backgroundRepeat: 'no-repeat',
@@ -519,7 +555,8 @@ export default function PaperTradingPage() {
                                 type="number"
                                 value={val}
                                 onChange={(e) => handleParamChange(key, e.target.value, schema?.type || 'number')}
-                                className="w-full h-[48px] bg-[#0a0f1c] border border-white/5 rounded-xl px-[16px] text-white text-[14px] focus:outline-none focus:border-blue-500"
+                                className="w-full h-12 bg-[#0a0f1c] border border-white/5 rounded-xl px-4 text-white text-[14px] focus:outline-none focus:border-blue-500"
+                                style={{ paddingLeft: '16px', paddingRight: '16px', height: '48px' }}
                                 required
                               />
                             )}
@@ -529,7 +566,7 @@ export default function PaperTradingPage() {
                     </div>
                   </div>
                 )}
-              <button type="submit" onClick={handleDeploy} disabled={isDeploying} className="w-full h-[56px] rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-[14px] transition-colors flex items-center justify-center gap-[8px] mt-[8px]">
+              <button type="submit" onClick={handleDeploy} disabled={isDeploying} className="w-full h-14 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-[14px] transition-colors flex items-center justify-center gap-2 mt-2" style={{ height: '56px', marginTop: '8px', gap: '8px' }}>
                 <Play className="w-[16px] h-[16px] fill-current" />
                 {isDeploying ? 'Deploying...' : 'Launch Paper Bot'}
               </button>
@@ -538,7 +575,7 @@ export default function PaperTradingPage() {
           </div>
 
           {/* RIGHT AREA: Active Simulations */}
-          <div className="bg-[#131b2f] border border-white/5 rounded-2xl p-[24px] flex flex-col gap-[24px]">
+          <div className="flex flex-col gap-[24px]" style={{ background: 'linear-gradient(145deg, #131b2f 0%, #0f1729 100%)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '24px', boxShadow: '0 4px 24px rgba(0,0,0,0.25)' }}>
             <div className="flex items-center justify-between">
               <h3 className="text-[18px] font-bold text-white flex items-center gap-[8px] leading-none">
                 <Bot className="w-[20px] h-[20px] text-cyan-400" />
@@ -551,32 +588,75 @@ export default function PaperTradingPage() {
 
             <div className="flex flex-col gap-[16px]">
               {activeBots.map((bot) => (
-                <div
-                  key={bot.id}
-                  className="p-[16px] rounded-xl bg-white/[0.02] border border-white/5 flex flex-col gap-[16px]"
-                >
-                  <div className="flex items-start justify-between gap-[16px]">
-                    <div className="flex flex-col gap-[4px]">
-                      <div className="font-bold text-white text-[16px] leading-none">
-                        {bot.name || bot.pair}
+                <div key={bot.id} style={{
+                  background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', 
+                  borderRadius: '16px', overflow: 'hidden', opacity: bot.status === 'STOPPED' ? 0.5 : 1
+                }}>
+                  {/* Card Header */}
+                  <div style={{ padding: '16px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                        <span style={{ fontSize: '15px', fontWeight: 700, color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={bot.name || bot.pair}>
+                          {bot.name || bot.pair}
+                        </span>
+                        <span style={{
+                          padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 800, letterSpacing: '0.05em',
+                          background: 'rgba(129,140,248,0.1)', color: '#818cf8', border: '1px solid rgba(129,140,248,0.2)', flexShrink: 0
+                        }}>
+                          TESTNET
+                        </span>
                       </div>
-                      <div className="text-[12px] text-slate-500 font-bold uppercase tracking-wider leading-none">
-                        {bot.pair} • {bot.strategy}
-                      </div>
+                      <p style={{ fontSize: '11px', color: '#64748b', fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <span style={{ fontWeight: 700, color: '#94a3b8' }}>{bot.pair}</span> • {bot.strategy}
+                      </p>
                     </div>
-                    <button className="w-[24px] h-[24px] rounded-md bg-[#1e293b] hover:bg-slate-700 flex items-center justify-center transition-colors shrink-0">
-                      <div className="w-[10px] h-[10px] bg-slate-400 rounded-sm" />
-                    </button>
                   </div>
-                  
-                  <div className="flex items-center justify-between border-t border-white/5 pt-[16px]">
-                    <div className="flex items-center gap-[8px]">
-                      <span className="text-[12px] text-slate-500 font-bold uppercase tracking-wider leading-none">Uptime</span>
-                      <span className="text-[14px] text-white font-medium leading-none">{bot.uptime}</span>
+
+                  {/* Card Body */}
+                  <div style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyItems: 'flex-start', gap: '24px' }}>
+                    <div>
+                      <p style={{ fontSize: '10px', color: '#64748b', fontWeight: 600, marginBottom: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Uptime</p>
+                      <p style={{ fontSize: '13px', color: 'white', fontWeight: 500 }}>{bot.uptime}</p>
                     </div>
-                    <span className={`text-[14px] font-bold leading-none ${bot.isWin ? 'text-emerald-500' : 'text-rose-500'}`}>
-                      {bot.pnl >= 0 ? '+' : ''}${Math.abs(bot.pnl).toLocaleString(undefined, {minimumFractionDigits: 2})}
-                    </span>
+                    <div>
+                      <p style={{ fontSize: '10px', color: '#64748b', fontWeight: 600, marginBottom: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sim PNL</p>
+                      <p style={{ fontSize: '14px', color: bot.pnl >= 0 ? '#10b981' : '#f43f5e', fontWeight: 700 }}>
+                        {bot.pnl >= 0 ? '+' : ''}${Math.abs(bot.pnl).toLocaleString(undefined, {minimumFractionDigits: 2})}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Card Footer Actions */}
+                  <div style={{ padding: '12px 16px', background: 'rgba(0,0,0,0.2)', borderTop: '1px solid rgba(255,255,255,0.03)', display: 'flex', gap: '8px' }}>
+                     <button
+                      onClick={() => handleToggleState(bot)}
+                      disabled={bot.status === 'STOPPED'}
+                      style={{
+                        flex: 1, display: 'flex', alignItems: 'center', justifyItems: 'center', justifyContent: 'center', gap: '6px',
+                        padding: '8px', borderRadius: '8px', fontSize: '11px', fontWeight: 600,
+                        background: bot.status === 'RUNNING' ? 'rgba(244,163,94,0.1)' : 'rgba(16,185,129,0.1)',
+                        color: bot.status === 'RUNNING' ? '#f59e0b' : '#10b981',
+                        border: `1px solid ${bot.status === 'RUNNING' ? 'rgba(244,163,94,0.2)' : 'rgba(16,185,129,0.2)'}`,
+                        cursor: bot.status === 'STOPPED' ? 'not-allowed' : 'pointer', transition: 'all 0.2s'
+                      }}
+                    >
+                      {bot.status === 'RUNNING' ? <Pause className="w-[12px] h-[12px] shrink-0" /> : <Play className="w-[12px] h-[12px] shrink-0" />}
+                      {bot.status === 'RUNNING' ? 'Pause' : 'Start'}
+                    </button>
+                    <button
+                      onClick={() => handleStopBot(bot)}
+                      disabled={bot.status === 'STOPPED'}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyItems: 'center', justifyContent: 'center',
+                        padding: '8px', borderRadius: '8px',
+                        background: 'rgba(244,63,94,0.1)', color: '#f43f5e',
+                        border: '1px solid rgba(244,63,94,0.2)',
+                        cursor: bot.status === 'STOPPED' ? 'not-allowed' : 'pointer', transition: 'all 0.2s'
+                      }}
+                      title="Stop Bot"
+                    >
+                      <Square className="w-[12px] h-[12px] shrink-0" fill="currentColor" />
+                    </button>
                   </div>
                 </div>
               ))}
@@ -585,7 +665,7 @@ export default function PaperTradingPage() {
         </div>
 
         {/* RECENT SIMULATED TRADES */}
-        <div className="bg-[#131b2f] border border-white/5 rounded-2xl flex flex-col overflow-hidden">
+        <div className="flex flex-col overflow-hidden" style={{ background: 'linear-gradient(145deg, #131b2f 0%, #0f1729 100%)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', boxShadow: '0 4px 24px rgba(0,0,0,0.25)' }}>
           <div className="flex items-center gap-[12px] px-[24px] py-[20px] border-b border-white/5">
             <div className="w-[32px] h-[32px] rounded-full bg-teal-500/20 flex items-center justify-center">
                <History className="w-[16px] h-[16px] text-teal-400" />
@@ -597,44 +677,46 @@ export default function PaperTradingPage() {
             <table className="w-full text-left whitespace-nowrap">
               <thead>
                 <tr>
-                  <th className="px-[24px] py-[16px] text-[12px] font-bold text-slate-500 uppercase tracking-wider border-b border-white/5">Asset Pair</th>
-                  <th className="px-[24px] py-[16px] text-[12px] font-bold text-slate-500 uppercase tracking-wider border-b border-white/5">Bot Name</th>
-                  <th className="px-[24px] py-[16px] text-[12px] font-bold text-slate-500 uppercase tracking-wider border-b border-white/5">Side</th>
-                  <th className="px-[24px] py-[16px] text-[12px] font-bold text-slate-500 uppercase tracking-wider border-b border-white/5">Fill Price</th>
-                  <th className="px-[24px] py-[16px] text-[12px] font-bold text-slate-500 uppercase tracking-wider border-b border-white/5">Time</th>
-                  <th className="px-[24px] py-[16px] text-[12px] font-bold text-slate-500 uppercase tracking-wider border-b border-white/5 text-right">Virtual PnL</th>
+                  <th className="pl-6 pr-4 py-4 text-[11px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/5" style={{ padding: '16px', paddingLeft: '24px' }}>Asset Pair</th>
+                  <th className="px-4 py-4 text-[11px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/5" style={{ padding: '16px' }}>Bot Name</th>
+                  <th className="px-4 py-4 text-[11px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/5 text-center" style={{ padding: '16px' }}>Side</th>
+                  <th className="px-4 py-4 text-[11px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/5 text-right" style={{ padding: '16px' }}>Fill Price</th>
+                  <th className="px-4 py-4 text-[11px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/5" style={{ padding: '16px' }}>Time</th>
+                  <th className="pl-4 pr-6 py-4 text-[11px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/5 text-right" style={{ padding: '16px', paddingRight: '24px' }}>Virtual PnL</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
                 {ledgerTrades.map((trade, i) => (
                   <tr key={i} className="hover:bg-white/[0.02] transition-colors">
-                    <td className="px-[24px] py-[16px] text-[14px] font-bold text-white">
+                    <td className="pl-6 pr-4 py-4 text-[13px] font-bold text-white whitespace-nowrap" style={{ padding: '16px', paddingLeft: '24px' }}>
                       {trade.pair}
                     </td>
-                    <td className="px-[24px] py-[16px] text-[14px] text-slate-300 font-medium">
+                    <td className="px-4 py-4 text-[13px] text-slate-300 font-medium max-w-[200px] truncate" title={trade.bot_name || "Manual Trade"} style={{ padding: '16px' }}>
                       {trade.bot_name || "Manual Trade"}
                     </td>
-                    <td className="px-[24px] py-[16px]">
+                    <td className="px-4 py-4 whitespace-nowrap text-center" style={{ padding: '16px' }}>
                       <span
-                        className={`inline-flex items-center justify-center px-[12px] py-[4px] rounded-full text-[12px] font-bold uppercase border ${
+                        className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-[11px] font-bold uppercase border ${
                           trade.side === 'BUY'
                             ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
                             : 'bg-rose-500/10 text-rose-500 border-rose-500/20'
                         }`}
+                        style={{ padding: '3px 10px' }}
                       >
                         {trade.side}
                       </span>
                     </td>
-                    <td className="px-[24px] py-[16px] text-[14px] text-slate-300">
-                      ${trade.price?.toLocaleString()}
+                    <td className="px-4 py-4 text-[13px] text-slate-300 whitespace-nowrap text-right font-medium" style={{ padding: '16px' }}>
+                      ${trade.price?.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 6})}
                     </td>
-                    <td className="px-[24px] py-[16px] text-[14px] text-slate-500">
+                    <td className="px-4 py-4 text-[13px] text-slate-500 whitespace-nowrap" style={{ padding: '16px' }}>
                       {new Date(trade.time).toLocaleString()}
                     </td>
                     <td
-                      className={`px-[24px] py-[16px] text-[14px] font-bold text-right ${
+                      className={`pl-4 pr-6 py-4 text-[13px] font-bold text-right whitespace-nowrap ${
                         trade.isWin ? 'text-emerald-500' : 'text-rose-500'
                       }`}
+                      style={{ padding: '16px', paddingRight: '24px' }}
                     >
                       {trade.pnl >= 0 ? '+' : ''}${Math.abs(trade.pnl).toLocaleString(undefined, {minimumFractionDigits: 2})}
                     </td>
@@ -644,11 +726,7 @@ export default function PaperTradingPage() {
             </table>
           </div>
         </div>
-
       </div>
-
-
-
     </div>
   );
 }
