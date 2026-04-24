@@ -336,6 +336,15 @@ export default function SettingsPage() {
         timezone: profile.timezone,
         bio: profile.bio,
       })
+      
+      // Update Supabase Auth metadata so the session data (and initial load) reflects the new name permanently
+      const { error: authError } = await supabase.auth.updateUser({
+        data: { full_name: profile.fullName, phone: profile.phone, timezone: profile.timezone, bio: profile.bio }
+      })
+      if (authError) {
+        console.error('Failed to sync auth metadata:', authError)
+      }
+
       toast.success('Profile updated successfully.')
     } catch (err) {
       toast.error(err.message || 'Failed to update profile.')
