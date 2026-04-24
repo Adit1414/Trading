@@ -39,7 +39,7 @@ from sqlalchemy.orm import selectinload
 from app.core.redis import get_redis
 from app.modules.bots.events import channel_name, make_event
 from app.db.session import get_db
-from app.db.models import BotModel, PaperTradeLedgerModel, ApiKeyModel, StrategyModel
+from app.db.models import BotModel, PaperTradeLedgerModel, UserSettingsModel, StrategyModel
 from app.core.security import decrypt_api_key
 from app.services.market_data.binance import get_binance_testnet_client
 
@@ -312,10 +312,10 @@ async def execute_trade(bot_id: str, side: str, user_id: str, quantity: float = 
             if bot.environment == "TESTNET":
                 logger.info("[Engine] TESTNET environment detected, placing paper trade for bot_id=%s", bot_id)
                 # Retrieve the user's decrypted Binance Testnet API keys
-                key_result = await session.execute(select(ApiKeyModel).where(ApiKeyModel.user_id == user_id))
+                key_result = await session.execute(select(UserSettingsModel).where(UserSettingsModel.user_id == user_id))
                 api_key_record = key_result.scalar_one_or_none()
-                if not api_key_record or not api_key_record.binance_testnet_api_key:
-                    logger.warning("[Engine] No Testnet keys found. Falling back to internal DB paper simulation.")
+                if not api_key_record or not api_key_record.binance_api_key:
+                    logger.warning("[Engine] No Testnet keys found in UserSettingsModel. Falling back to internal DB paper simulation.")
                     from app.modules.live_trading.engine import live_trading_engine
                     await live_trading_engine.process_bot_signal(
                         user_id=user_id,
@@ -325,10 +325,34 @@ async def execute_trade(bot_id: str, side: str, user_id: str, quantity: float = 
                         quantity=quantity,
                         execution_mode="PAPER"
                     )
+                    # When falling back to internal DB paper simulation, we must also record it
+                    # in the PaperTradeLedgerModel so it shows up on the Paper Trading dashboard.
+                    simulated_price = 0.0
+                    try:
+                        exchange = ccxt.binance({"enableRateLimit": True, "options": {"defaultType": "spot"}})
+                        ticker = await exchange.fetch_ticker(bot.symbol.upper())
+                        simulated_price = float(ticker.get("last", 0.0))
+                    except Exception:
+                        pass
+                    finally:
+                        if 'exchange' in locals():
+                            await exchange.close()
+
+                    ledger_entry = PaperTradeLedgerModel(
+                        bot_id=bot_id,
+                        pair=bot.symbol,
+                        side=side.upper(),
+                        execution_price=simulated_price,
+                        quantity=quantity,
+                        realized_pnl=0.0,
+                        is_win=True
+                    )
+                    session.add(ledger_entry)
+                    await session.commit()
                     return
                 
-                api_key = decrypt_api_key(api_key_record.binance_testnet_api_key)
-                secret = decrypt_api_key(api_key_record.binance_testnet_secret)
+                api_key = decrypt_api_key(api_key_record.binance_api_key)
+                secret = decrypt_api_key(api_key_record.binance_secret)
 
                 exchange = get_binance_testnet_client(api_key, secret)
                 

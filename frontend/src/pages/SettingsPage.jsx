@@ -1086,22 +1086,6 @@ export default function SettingsPage() {
               />
             </FieldRow>
 
-            <FieldRow label="Default Exchange" hint="Pre-selected exchange for new bots">
-              <select
-                value={trading.defaultExchange}
-                onChange={(e) => setTrading((p) => ({ ...p, defaultExchange: e.target.value }))}
-                style={{
-                  width: '100%', padding: '10px 14px', borderRadius: '10px',
-                  background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
-                  color: 'white', fontSize: '13px', fontFamily: 'inherit',
-                  outline: 'none', cursor: 'pointer', appearance: 'none',
-                }}
-              >
-                {['binance', 'coinbase', 'kraken', 'bybit', 'okx'].map((ex) => (
-                  <option key={ex} value={ex} style={{ background: '#0f1729' }}>{ex.charAt(0).toUpperCase() + ex.slice(1)}</option>
-                ))}
-              </select>
-            </FieldRow>
 
             <FieldRow label="Paper Trading Mode" hint="Simulate trades without real money">
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

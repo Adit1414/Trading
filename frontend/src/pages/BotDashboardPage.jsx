@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useBots, useUpdateBotState } from '../api/bots'
 import { useAuthStore } from '../stores/authStore'
+import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { Bot, Play, Pause, Square, Activity, AlertTriangle } from 'lucide-react'
+import { Bot, Play, Pause, Square, Activity, AlertTriangle, Plus } from 'lucide-react'
 
 export default function BotDashboardPage() {
+  const navigate = useNavigate()
   const { data: bots = [], isLoading, isError } = useBots()
   const { mutate: updateState } = useUpdateBotState()
   const session = useAuthStore((s) => s.session)
@@ -118,6 +120,20 @@ export default function BotDashboardPage() {
             </p>
           </div>
         </div>
+        <button
+          onClick={() => navigate('/bots/create')}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '8px',
+            padding: '12px 24px', borderRadius: '12px',
+            background: 'linear-gradient(135deg, #818cf8 0%, #6366f1 100%)',
+            border: 'none', color: 'white', fontSize: '14px', fontWeight: 700,
+            cursor: 'pointer', transition: 'all 0.2s',
+            boxShadow: '0 4px 24px rgba(99,102,241,0.4)',
+          }}
+        >
+          <Plus size={16} />
+          Create Bot
+        </button>
       </div>
 
       {bots.length === 0 ? (

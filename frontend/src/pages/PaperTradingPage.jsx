@@ -43,9 +43,10 @@ const CHART_DATA = [
 ];
 
 export default function PaperTradingPage() {
-  const [allocation, setAllocation] = useState('1000');
+  const [assetMode, setAssetMode] = useState('BTCUSDT');
   const [strategyId, setStrategyId] = useState('');
-  const [assetMode, setAssetMode] = useState('BTC/USDT');
+  const [allocation, setAllocation] = useState('1000');
+  const [parameters, setParameters] = useState({});
   const [activeTimeframe, setActiveTimeframe] = useState('1D');
   const chartRef = useRef(null);
   const [chartData, setChartData] = useState([]);
@@ -60,6 +61,33 @@ export default function PaperTradingPage() {
 
   const session = useAuthStore((s) => s.session);
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    // Select first strategy initially if none selected
+    if (strategiesData.length > 0 && !strategyId) {
+      setStrategyId(strategiesData[0].id);
+    }
+  }, [strategiesData, strategyId]);
+
+  useEffect(() => {
+    if (strategiesData.length > 0 && strategyId) {
+      const selected = strategiesData.find(s => s.id === strategyId);
+      if (selected && selected.parameter_schema?.properties) {
+        let p = {};
+        Object.entries(selected.parameter_schema.properties).forEach(([k, v]) => {
+          p[k] = v.default || 0;
+        });
+        setParameters(p);
+      } else {
+        setParameters({});
+      }
+    }
+  }, [strategyId, strategiesData]);
+
+  const handleParamChange = (key, value, type) => {
+    const val = type === 'integer' || type === 'number' ? Number(value) : value;
+    setParameters((prev) => ({ ...prev, [key]: val }));
+  };
 
   const navigate = window.location.assign; // We will just use standard anchor/link or useNavigate. Wait, I should import useNavigate from react-router-dom!
 
@@ -173,21 +201,13 @@ export default function PaperTradingPage() {
     if (!strategyId) return toast.error('Please select a strategy');
 
     const selectedStrategy = strategiesData.find(s => s.id === strategyId);
-    
-    // Auto-fill default params from requested schema
-    let defaultParams = {};
-    if (selectedStrategy?.parameter_schema?.properties) {
-      Object.entries(selectedStrategy.parameter_schema.properties).forEach(([k, v]) => {
-        defaultParams[k] = v.default || 0;
-      });
-    }
 
 
     const payload = {
       symbol: assetMode,
       is_testnet: true,
       strategy_id: strategyId,
-      parameters: defaultParams,
+      parameters: parameters,
       take_profit: null,
       stop_loss: null,
       name: `Paper Bot - ${assetMode} - ${selectedStrategy?.name}`
@@ -447,6 +467,54 @@ export default function PaperTradingPage() {
                     />
                   </div>
                 </div>
+
+                {/* Dynamic Parameters */}
+                {Object.keys(parameters).length > 0 && (
+                  <div className="sm:col-span-2 pt-[24px] border-t border-white/5 mt-[8px]">
+                    <label className="text-[12px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-[16px] block">
+                      Strategy Parameters
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-[16px]">
+                      {Object.entries(parameters).map(([key, val]) => {
+                        const schema = strategiesData.find(s => s.id === strategyId)?.parameter_schema?.properties?.[key];
+                        const isEnum = schema?.enum;
+                        
+                        return (
+                          <div key={key} className="flex flex-col gap-[8px]">
+                            <span className="text-[11px] text-slate-500 uppercase tracking-widest leading-none">
+                              {key.replace(/_/g, ' ')}
+                            </span>
+                            {isEnum ? (
+                              <select
+                                value={val}
+                                onChange={(e) => handleParamChange(key, e.target.value, schema.type)}
+                                className="w-full h-[48px] bg-[#0a0f1c] border border-white/5 rounded-xl px-[16px] text-white text-[14px] focus:outline-none focus:border-blue-500 appearance-none cursor-pointer"
+                                style={{
+                                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%23475569' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
+                                    backgroundPosition: 'right 16px center',
+                                    backgroundRepeat: 'no-repeat',
+                                    backgroundSize: '24px 24px',
+                                  }}
+                              >
+                                {schema.enum.map(opt => (
+                                  <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                type="number"
+                                value={val}
+                                onChange={(e) => handleParamChange(key, e.target.value, schema?.type || 'number')}
+                                className="w-full h-[48px] bg-[#0a0f1c] border border-white/5 rounded-xl px-[16px] text-white text-[14px] focus:outline-none focus:border-blue-500"
+                                required
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               <button type="submit" onClick={handleDeploy} disabled={isDeploying} className="w-full h-[56px] rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-[14px] transition-colors flex items-center justify-center gap-[8px] mt-[8px]">
                 <Play className="w-[16px] h-[16px] fill-current" />
                 {isDeploying ? 'Deploying...' : 'Launch Paper Bot'}
