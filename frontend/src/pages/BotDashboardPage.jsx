@@ -164,12 +164,13 @@ export default function BotDashboardPage() {
               }}>
                 {/* Card Header */}
                 <div style={{ padding: '20px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
+                  <div style={{ flex: 1, minWidth: 0, paddingRight: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                      <span style={{ fontSize: '16px', fontWeight: 700, color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '160px' }} title={bot.name || `${bot.symbol} Bot`}>
+                      <span style={{ fontSize: '16px', fontWeight: 700, color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }} title={bot.name || `${bot.symbol} Bot`}>
                         {bot.name || `${bot.symbol} Bot`}
                       </span>
                       <span style={{
+                        flexShrink: 0,
                         padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 800, letterSpacing: '0.05em',
                         background: bot.is_testnet ? 'rgba(129,140,248,0.1)' : 'rgba(244,63,94,0.1)',
                         color: bot.is_testnet ? '#818cf8' : '#f43f5e',
@@ -178,12 +179,13 @@ export default function BotDashboardPage() {
                         {bot.is_testnet ? 'TESTNET' : 'MAINNET'}
                       </span>
                     </div>
-                    <p style={{ fontSize: '11px', color: '#64748b', fontFamily: 'monospace' }}>
+                    <p style={{ fontSize: '11px', color: '#64748b', fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       <span style={{ fontWeight: 700, color: '#94a3b8' }}>{bot.symbol}</span> • ID: {bot.id.slice(0,8)}
                     </p>
                   </div>
 
                   <span style={{
+                    flexShrink: 0,
                     display: 'flex', alignItems: 'center', gap: '4px',
                     padding: '4px 8px', borderRadius: '8px', fontSize: '11px', fontWeight: 700,
                     background: isRunning ? 'rgba(16,185,129,0.1)' : isPaused ? 'rgba(244,163,94,0.1)' : 'rgba(100,116,139,0.1)',
